@@ -9,7 +9,14 @@ Stack: **Express 5 + React 18 (Vite) + Node.js + MySQL 8**.
 - Node.js 20 o superior
 - Servidor MySQL 8 (o MariaDB 10.6+) accesible
 
-## Instalación
+## Despliegue en un equipo (producción)
+
+Ver **[DEPLOY.md](DEPLOY.md)**. Resumen:
+
+- **Windows:** `instalar-windows.cmd` instala MySQL como servicio (sin XAMPP) y deja la app corriendo con PM2 y arranque automático.
+- **Linux:** `bash scripts/linux/install.sh`.
+
+## Desarrollo
 
 ```bash
 npm run install:all

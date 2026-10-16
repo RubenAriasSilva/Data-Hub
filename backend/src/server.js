@@ -56,5 +56,6 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: message, ...(err.details ? { details: err.details } : {}) });
 });
 
-app.listen(PORT, () => console.log(`[api] Data Hub escuchando en http://localhost:${PORT}`));
+const HOST = process.env.HOST || '0.0.0.0'; // 0.0.0.0 = accesible desde otras computadoras de la red
+app.listen(PORT, HOST, () => console.log(`[api] Data Hub escuchando en http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
 connectWithRetry();

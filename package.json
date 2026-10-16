@@ -8,7 +8,12 @@
     "dev": "concurrently -n api,web -c blue,cyan \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
     "build": "npm run build --prefix frontend",
     "start": "npm start --prefix backend",
-    "test": "npm test --prefix backend"
+    "test": "npm test --prefix backend",
+    "deploy": "npm run build && pm2 startOrReload ecosystem.config.cjs --update-env && pm2 save",
+    "deploy:stop": "pm2 stop data-hub",
+    "deploy:restart": "pm2 restart data-hub --update-env",
+    "deploy:logs": "pm2 logs data-hub",
+    "deploy:status": "pm2 status"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
