@@ -18,11 +18,18 @@ Ver **[DEPLOY.md](DEPLOY.md)**. Resumen:
 
 ## Desarrollo
 
-```bash
-npm run install:all
-cp backend/.env.example backend/.env   # editar credenciales de MySQL
-npm run dev                            # API en :4000 y frontend en :5173
-```
+1. Necesitas un MySQL corriendo. En Windows, la forma más simple es instalarlo como servicio con `scripts\windows\setup-mysql.ps1` (ver [DEPLOY.md](DEPLOY.md)). Ese script también crea `backend\.env` con las credenciales.
+2. Instala las dependencias:
+   ```
+   npm run install:all
+   ```
+3. Solo si no usaste `setup-mysql.ps1`, crea el `.env` y edita las credenciales:
+   - CMD: `copy backend\.env.example backend\.env`
+   - PowerShell / Linux: `cp backend/.env.example backend/.env`
+4. Arranca en modo desarrollo (API en http://localhost:4000, frontend en http://localhost:5173):
+   ```
+   npm run dev
+   ```
 
 Al arrancar, el backend crea la base de datos (`DB_NAME`), las tablas de metadatos y la categoría **RPAs**. Si MySQL no está disponible, la API responde 503 y reintenta la conexión cada 10 s.
 

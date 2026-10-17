@@ -80,7 +80,8 @@ try {
   if (-not $NoStartup) {
     Step 'Registrando arranque automático'
     $startup = [Environment]::GetFolderPath('Startup')
-    $pm2Cmd = (Get-Command pm2).Source
+    # Debe ser pm2.cmd: PowerShell resuelve "pm2" a pm2.ps1, que desde CMD se abre en el editor en vez de ejecutarse
+    $pm2Cmd = (Get-Command pm2.cmd -ErrorAction Stop).Source
     $launcher = Join-Path $startup 'DataHub-PM2.cmd'
     [IO.File]::WriteAllText($launcher, "@echo off`r`ncall `"$pm2Cmd`" resurrect`r`n")
     Write-Host "Creado $launcher"
