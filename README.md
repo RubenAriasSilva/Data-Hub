@@ -14,7 +14,59 @@ Stack: **Express 5 + React 18 (Vite) + Node.js + MySQL 8**.
 Ver **[DEPLOY.md](DEPLOY.md)**. Resumen:
 
 - **Windows:** `instalar-windows.cmd` instala MySQL como servicio (sin XAMPP) y deja la app corriendo con PM2 y arranque automático.
-- **Linux:** `bash scripts/linux/install.sh`.
+- **Linux:** `bash scripts/linux/install.sh` (detalle abajo).
+
+### Linux (Ubuntu 22.04 / 24.04)
+
+El script `scripts/linux/install.sh` instala MySQL como servicio, compila el frontend y deja la app corriendo con PM2. La app arranca sola al encender el servidor.
+
+**Requisitos:** un usuario con `sudo`, acceso a internet, y `git` y `curl` instalados (`sudo apt-get install -y git curl`).
+
+1. **Instala Node.js 20 o superior** (si `node --version` no responde o es menor):
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+   sudo apt-get install -y nodejs
+   ```
+2. **Clona el repositorio.** El servidor despliega la rama que clones: los cambios tienen que estar en `main`, o indica la rama con `-b`.
+   ```bash
+   git clone https://github.com/RubenAriasSilva/Data-Hub.git
+   cd Data-Hub
+   ```
+3. **Ejecuta el instalador**, sin `sudo`. El script lo pide solo cuando lo necesita:
+   ```bash
+   bash scripts/linux/install.sh                # instala MySQL si falta y despliega
+   bash scripts/linux/install.sh --skip-mysql   # si ya tienes MySQL: antes edita backend/.env (cp backend/.env.example backend/.env)
+   ```
+   El script hace lo siguiente:
+   - instala `mysql-server` y lo habilita en systemd;
+   - crea la base `data_hub` y el usuario `datahub` con una contraseña aleatoria, y la guarda en `backend/.env`;
+   - instala las dependencias y compila el frontend;
+   - arranca la app con PM2 y registra PM2 en systemd;
+   - verifica `/api/health` y muestra las URLs de acceso.
+4. **Abre el puerto** si el servidor tiene firewall, para que otras computadoras entren:
+   ```bash
+   sudo ufw allow 4000/tcp
+   ```
+5. **Comprueba** que la app responde:
+   ```bash
+   curl http://localhost:4000/api/health   # {"status":"ok",...}
+   ```
+   Luego abre `http://<ip-del-servidor>:4000` en el navegador.
+
+**Actualizar a una nueva versión:**
+```bash
+cd Data-Hub && git pull && bash scripts/linux/install.sh --skip-mysql
+```
+
+**Operación:**
+- Estado: `pm2 status`
+- Logs: `pm2 logs data-hub`
+- Reiniciar tras editar `backend/.env`: `pm2 restart data-hub --update-env`
+- MySQL: `sudo systemctl status mysql`
+
+Respaldo, configuración y problemas comunes: ver [DEPLOY.md](DEPLOY.md).
+
+> **Debian:** no trae el paquete `mysql-server`, así que el instalador falla en ese paso. Instala antes MySQL o MariaDB (`sudo apt-get install -y mariadb-server`), configura `backend/.env` y ejecuta el script con `--skip-mysql`.
 
 ## Desarrollo
 
