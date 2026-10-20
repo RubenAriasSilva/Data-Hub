@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Instalación en Linux (Debian/Ubuntu): MySQL como servicio systemd + Data Hub con PM2.
+# Instalación en Linux (Ubuntu o SUSE): MySQL/MariaDB como servicio systemd + Data Hub con PM2.
+#   Ubuntu (apt):            instala mysql-server
+#   SLES / openSUSE (zypper): instala mariadb
 # Uso:  bash scripts/linux/install.sh            # instala MySQL (si falta) y despliega
 #       bash scripts/linux/install.sh --skip-mysql   # solo despliega (MySQL ya configurado en backend/.env)
 # Es idempotente: vuelve a ejecutarlo tras cada "git pull" para actualizar.
@@ -16,12 +18,20 @@ set_env() { # set_env CLAVE valor
 }
 get_env() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true; }
 
+if command -v apt-get >/dev/null; then PKG=apt
+elif command -v zypper >/dev/null; then PKG=zypper
+else PKG=; fi
+
 cd "$REPO_ROOT"
 
 step 'Verificando Node.js'
 if ! command -v node >/dev/null; then
   echo 'Node.js no está instalado. Instálalo (20 o superior), por ejemplo:'
-  echo '  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs'
+  if [[ "$PKG" == zypper ]]; then
+    echo '  sudo zypper --non-interactive install nodejs22 npm22   # o nodejs20 npm20'
+  else
+    echo '  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs'
+  fi
   exit 1
 fi
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
@@ -31,13 +41,32 @@ echo "Node $(node --version)"
 [[ -f "$ENV_FILE" ]] || cp "$REPO_ROOT/backend/.env.example" "$ENV_FILE"
 
 if (( ! SKIP_MYSQL )); then
-  if ! command -v mysqld >/dev/null && ! systemctl list-unit-files | grep -q '^mysql\.service'; then
-    step 'Instalando MySQL Server'
-    sudo apt-get update -y
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server
+  # mariadb primero: en MariaDB "mysql.service" es un alias y systemctl enable rechaza los alias
+  find_db_service() {
+    for s in mariadb mysql mysqld; do
+      if systemctl cat "$s.service" >/dev/null 2>&1; then echo "$s"; return; fi
+    done
+  }
+  DB_SERVICE="$(find_db_service)"
+  if [[ -z "$DB_SERVICE" ]]; then
+    case "$PKG" in
+      apt)
+        step 'Instalando MySQL Server'
+        sudo apt-get update -y
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server ;;
+      zypper)
+        step 'Instalando MariaDB'
+        sudo zypper --non-interactive install mariadb mariadb-client ;;
+      *)
+        echo 'No se reconoce el gestor de paquetes (apt o zypper). Instala MySQL 8 o MariaDB 10.6+,'
+        echo 'configura backend/.env y ejecuta: bash scripts/linux/install.sh --skip-mysql'
+        exit 1 ;;
+    esac
+    DB_SERVICE="$(find_db_service)"
+    [[ -n "$DB_SERVICE" ]] || { echo 'No se encontró el servicio de MySQL/MariaDB tras instalarlo.'; exit 1; }
   fi
-  step 'Habilitando MySQL al arranque'
-  sudo systemctl enable --now mysql
+  step "Habilitando $DB_SERVICE al arranque"
+  sudo systemctl enable --now "$DB_SERVICE"
 
   if [[ -z "$(get_env DB_PASSWORD)" || "$(get_env DB_USER)" == "root" ]]; then
     step 'Creando base de datos y usuario de la app'
@@ -99,4 +128,8 @@ else
 fi
 echo "  Local: http://localhost:$PORT"
 for ip in $(hostname -I 2>/dev/null); do echo "  Red:   http://$ip:$PORT"; done
-echo "Si usas firewall:  sudo ufw allow $PORT/tcp"
+if [[ "$PKG" == zypper ]]; then
+  echo "Si usas firewall:  sudo firewall-cmd --permanent --add-port=$PORT/tcp && sudo firewall-cmd --reload"
+else
+  echo "Si usas firewall:  sudo ufw allow $PORT/tcp"
+fi

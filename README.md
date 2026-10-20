@@ -16,17 +16,23 @@ Ver **[DEPLOY.md](DEPLOY.md)**. Resumen:
 - **Windows:** `instalar-windows.cmd` instala MySQL como servicio (sin XAMPP) y deja la app corriendo con PM2 y arranque automático.
 - **Linux:** `bash scripts/linux/install.sh` (detalle abajo).
 
-### Linux (Ubuntu 22.04 / 24.04)
+### Linux (Ubuntu 22.04 / 24.04, SUSE Linux Enterprise 15 / openSUSE Leap 15)
 
-El script `scripts/linux/install.sh` instala MySQL como servicio, compila el frontend y deja la app corriendo con PM2. La app arranca sola al encender el servidor.
+El script `scripts/linux/install.sh` detecta la distribución e instala la base de datos como servicio (MySQL en Ubuntu, MariaDB en SUSE), compila el frontend y deja la app corriendo con PM2. La app arranca sola al encender el servidor.
 
-**Requisitos:** un usuario con `sudo`, acceso a internet, y `git` y `curl` instalados (`sudo apt-get install -y git curl`).
+**Requisitos:** un usuario con `sudo`, acceso a internet, y `git` y `curl` instalados.
 
-1. **Instala Node.js 20 o superior** (si `node --version` no responde o es menor):
+1. **Instala Node.js 20 o superior y las herramientas** (si `node --version` no responde o es menor):
    ```bash
+   # Ubuntu
+   sudo apt-get install -y git curl
    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
    sudo apt-get install -y nodejs
+
+   # SUSE (SLES 15 / openSUSE Leap 15)
+   sudo zypper --non-interactive install git curl nodejs22 npm22   # o nodejs20 npm20
    ```
+   En SLES, los paquetes de Node.js vienen en el módulo *Web and Scripting*. Si `zypper` no los encuentra, actívalo con `sudo SUSEConnect -p sle-module-web-scripting/15.<SP>/x86_64`, usando el Service Pack del servidor (p. ej. `15.6`).
 2. **Clona el repositorio.** El servidor despliega la rama que clones: los cambios tienen que estar en `main`, o indica la rama con `-b`.
    ```bash
    git clone https://github.com/RubenAriasSilva/Data-Hub.git
@@ -34,18 +40,19 @@ El script `scripts/linux/install.sh` instala MySQL como servicio, compila el fro
    ```
 3. **Ejecuta el instalador**, sin `sudo`. El script lo pide solo cuando lo necesita:
    ```bash
-   bash scripts/linux/install.sh                # instala MySQL si falta y despliega
+   bash scripts/linux/install.sh                # instala MySQL (Ubuntu) o MariaDB (SUSE) si falta y despliega
    bash scripts/linux/install.sh --skip-mysql   # si ya tienes MySQL: antes edita backend/.env (cp backend/.env.example backend/.env)
    ```
    El script hace lo siguiente:
-   - instala `mysql-server` y lo habilita en systemd;
+   - instala `mysql-server` (Ubuntu, con `apt`) o `mariadb` (SUSE, con `zypper`) y lo habilita en systemd;
    - crea la base `data_hub` y el usuario `datahub` con una contraseña aleatoria, y la guarda en `backend/.env`;
    - instala las dependencias y compila el frontend;
    - arranca la app con PM2 y registra PM2 en systemd;
    - verifica `/api/health` y muestra las URLs de acceso.
 4. **Abre el puerto** si el servidor tiene firewall, para que otras computadoras entren:
    ```bash
-   sudo ufw allow 4000/tcp
+   sudo ufw allow 4000/tcp                                                      # Ubuntu
+   sudo firewall-cmd --permanent --add-port=4000/tcp && sudo firewall-cmd --reload   # SUSE
    ```
 5. **Comprueba** que la app responde:
    ```bash
@@ -62,7 +69,7 @@ cd Data-Hub && git pull && bash scripts/linux/install.sh --skip-mysql
 - Estado: `pm2 status`
 - Logs: `pm2 logs data-hub`
 - Reiniciar tras editar `backend/.env`: `pm2 restart data-hub --update-env`
-- MySQL: `sudo systemctl status mysql`
+- Base de datos: `sudo systemctl status mysql` (Ubuntu) o `sudo systemctl status mariadb` (SUSE)
 
 Respaldo, configuración y problemas comunes: ver [DEPLOY.md](DEPLOY.md).
 

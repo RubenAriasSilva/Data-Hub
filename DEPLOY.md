@@ -52,20 +52,22 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\deploy.ps1 -OpenFirewal
 
 **Arranque automático:** PM2 se restaura al **iniciar sesión** en Windows. En un servidor que debe levantar la app sin que nadie inicie sesión, configura el inicio de sesión automático del usuario o registra PM2 como servicio con [pm2-installer](https://github.com/jessety/pm2-installer).
 
-## Linux (Ubuntu / Debian)
+## Linux (Ubuntu / SUSE)
 
 ```bash
 git clone https://github.com/RubenAriasSilva/Data-Hub.git
 cd Data-Hub
-bash scripts/linux/install.sh          # instala MySQL si falta + despliega
+bash scripts/linux/install.sh          # instala MySQL (Ubuntu) o MariaDB (SUSE) si falta + despliega
 bash scripts/linux/install.sh --skip-mysql   # si MySQL ya está configurado en backend/.env
 ```
 
 El script hace lo siguiente:
-- instala `mysql-server` y lo habilita en systemd;
+- instala `mysql-server` (Ubuntu, `apt`) o `mariadb` (SUSE, `zypper`) y lo habilita en systemd;
 - crea la base y el usuario `datahub`, y escribe `backend/.env`;
 - compila el frontend y arranca la app con PM2;
 - registra PM2 en systemd con `pm2 startup`, así la app arranca con el equipo aunque nadie inicie sesión.
+
+En SUSE, Node.js se instala con `sudo zypper install nodejs22 npm22`. En SLES requiere el módulo *Web and Scripting*. Ver los pasos completos en el [README](README.md).
 
 ---
 
@@ -90,7 +92,8 @@ Los scripts son idempotentes: reinstalan dependencias, recompilan y recargan la 
 | Reiniciar (p. ej. tras editar `.env`) | `pm2 restart data-hub --update-env` |
 | Detener / iniciar | `pm2 stop data-hub` / `pm2 start data-hub` |
 | MySQL (Windows) | `net stop MySQL84` / `net start MySQL84` |
-| MySQL (Linux) | `sudo systemctl stop mysql` / `sudo systemctl start mysql` |
+| MySQL (Ubuntu) | `sudo systemctl stop mysql` / `sudo systemctl start mysql` |
+| MariaDB (SUSE) | `sudo systemctl stop mariadb` / `sudo systemctl start mariadb` |
 | Salud de la app | `http://localhost:4000/api/health` |
 
 Desde la raíz del repositorio también puedes usar `npm run deploy`, `npm run deploy:status`, `npm run deploy:logs`, `npm run deploy:restart` y `npm run deploy:stop`.
@@ -118,6 +121,6 @@ En Windows, los ejecutables están en `C:\mysql\mysql-8.4.6-winx64\bin\`.
 ## Problemas comunes
 
 - **"El puerto 3306 ya está en uso"**: hay otro MySQL o un XAMPP corriendo. Detenlo, o usa `-Port 3307` y la app tomará ese puerto desde `.env`.
-- **La interfaz dice "Sin conexión a MySQL"**: revisa el servicio (`Get-Service MySQL84` o `systemctl status mysql`) y las credenciales en `backend/.env`.
-- **Otras computadoras no pueden entrar**: abre el puerto en el firewall (`-OpenFirewall` en Windows, `sudo ufw allow 4000/tcp` en Linux) y usa la IP que muestra el script.
+- **La interfaz dice "Sin conexión a MySQL"**: revisa el servicio (`Get-Service MySQL84` o `systemctl status mysql`, o `systemctl status mariadb` en SUSE) y las credenciales en `backend/.env`.
+- **Otras computadoras no pueden entrar**: abre el puerto en el firewall (`-OpenFirewall` en Windows, `sudo ufw allow 4000/tcp` en Ubuntu, `sudo firewall-cmd --permanent --add-port=4000/tcp && sudo firewall-cmd --reload` en SUSE) y usa la IP que muestra el script.
 - **PowerShell bloquea el script**: ejecútalo con `powershell -ExecutionPolicy Bypass -File ...` o usa `instalar-windows.cmd`.
