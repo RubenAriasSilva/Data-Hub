@@ -4,7 +4,7 @@ import { Plus, Pencil, Trash2, Eraser, Key } from 'lucide-react';
 import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
 import { Badge, Modal, Alert, Spinner } from '../../components/ui';
-import { DATA_TYPES, IDENT_RE, slugify } from '../../utils/format';
+import { DATA_TYPES, IDENT_RE, slugify, fmtNumber } from '../../utils/format';
 
 export default function StructureTab({ table, onChanged }) {
   const navigate = useNavigate();
@@ -14,6 +14,7 @@ export default function StructureTab({ table, onChanged }) {
   const [adding, setAdding] = useState(false);
   const [newCol, setNewCol] = useState({ excel_name: '', db_name: '', data_type: 'text', dbTouched: false });
   const [editCol, setEditCol] = useState(null);
+  const [convErrors, setConvErrors] = useState([]);
   const [danger, setDanger] = useState(null); // 'truncate' | 'drop'
   const [confirmText, setConfirmText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -22,12 +23,14 @@ export default function StructureTab({ table, onChanged }) {
   const run = async (fn, okMsg) => {
     setBusy(true);
     setError(null);
+    setConvErrors([]);
     try {
       await fn();
       if (okMsg) toast(okMsg);
       return true;
     } catch (err) {
       setError(err.message);
+      setConvErrors(err.data?.details?.errors ?? []);
       return false;
     } finally {
       setBusy(false);
@@ -56,8 +59,13 @@ export default function StructureTab({ table, onChanged }) {
     }
   };
 
-  const saveExcelName = async () => {
-    const ok = await run(() => api.put(`/tables/${table.id}/columns/${editCol.id}`, { excel_name: editCol.excel_name }), 'Columna actualizada');
+  const original = editCol && table.columns.find((c) => c.id === editCol.id);
+  const typeChanged = Boolean(original) && editCol.data_type !== original.data_type;
+  const dbNameChanged = Boolean(original) && editCol.db_name !== original.db_name;
+
+  const saveColumn = async () => {
+    const { excel_name, db_name, data_type } = editCol;
+    const ok = await run(() => api.put(`/tables/${table.id}/columns/${editCol.id}`, { excel_name, db_name, data_type }), 'Columna actualizada');
     if (ok) {
       setEditCol(null);
       onChanged();
@@ -77,7 +85,7 @@ export default function StructureTab({ table, onChanged }) {
     }
   };
 
-  const openModal = (setter) => { setError(null); setter(); };
+  const openModal = (setter) => { setError(null); setConvErrors([]); setter(); };
 
   return (
     <div className="stack">
@@ -130,7 +138,7 @@ export default function StructureTab({ table, onChanged }) {
                     </div>
                   </td>
                   <td>
-                    <button type="button" className="btn-ghost btn-icon" title="Cambiar nombre en Excel" onClick={() => openModal(() => setEditCol({ ...c }))}>
+                    <button type="button" className="btn-ghost btn-icon" title="Editar columna" onClick={() => openModal(() => setEditCol({ ...c }))}>
                       <Pencil size={14} />
                     </button>
                   </td>
@@ -141,7 +149,7 @@ export default function StructureTab({ table, onChanged }) {
         </div>
         <div className="card-pad muted small">
           Además se generan <span className="code-inline">_id</span>, <span className="code-inline">_created_at</span> y <span className="code-inline">_updated_at</span>.
-          El nombre en BD y el tipo no se modifican tras la creación para proteger los datos existentes.
+          Al cambiar el tipo, los datos existentes se convierten; si algún valor no es compatible, no se modifica nada.
         </div>
       </div>
 
@@ -189,11 +197,11 @@ export default function StructureTab({ table, onChanged }) {
       </Modal>
 
       <Modal
-        open={Boolean(editCol)} title="Cambiar nombre en Excel" onClose={() => setEditCol(null)}
+        open={Boolean(editCol)} title="Editar columna" onClose={() => setEditCol(null)}
         footer={(
           <>
             <button type="button" className="btn-secondary" onClick={() => setEditCol(null)}>Cancelar</button>
-            <button type="button" className="btn-primary" onClick={saveExcelName} disabled={busy || !editCol?.excel_name.trim()}>
+            <button type="button" className="btn-primary" onClick={saveColumn} disabled={busy || !editCol?.excel_name.trim() || !IDENT_RE.test(editCol?.db_name ?? '')}>
               {busy && <Spinner />} Guardar
             </button>
           </>
@@ -206,7 +214,39 @@ export default function StructureTab({ table, onChanged }) {
               <label className="form-label">Nombre en Excel</label>
               <input value={editCol.excel_name} autoFocus onChange={(e) => setEditCol({ ...editCol, excel_name: e.target.value })} />
             </div>
-            <div className="field-hint">Columna en BD: <span className="code-inline">{editCol.db_name}</span></div>
+            <div className="field">
+              <label className="form-label">Nombre en BD</label>
+              <input
+                className={`mono${IDENT_RE.test(editCol.db_name) ? '' : ' invalid'}`} value={editCol.db_name}
+                onChange={(e) => setEditCol({ ...editCol, db_name: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label className="form-label">Tipo</label>
+              <select value={editCol.data_type} onChange={(e) => setEditCol({ ...editCol, data_type: e.target.value })}>
+                {Object.entries(DATA_TYPES)
+                  .filter(([k]) => !(editCol.is_key && k === 'longtext'))
+                  .map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
+              </select>
+            </div>
+            {(dbNameChanged || typeChanged) && (
+              <Alert type="warning">
+                {dbNameChanged && <>Las aplicaciones que lean la API en JSON verán el campo como <span className="code-inline">{editCol.db_name}</span> en lugar de <span className="code-inline">{original.db_name}</span>. </>}
+                {typeChanged && <>Los {fmtNumber(table.row_count)} registros se convertirán de {DATA_TYPES[original.data_type]?.label} a {DATA_TYPES[editCol.data_type]?.label}; si algún valor no es compatible, no se cambia nada.</>}
+              </Alert>
+            )}
+            {convErrors.length > 0 && (
+              <div className="table-wrap" style={{ marginTop: 12, maxHeight: 220 }}>
+                <table>
+                  <thead><tr><th className="num">_id</th><th>Valor</th><th>Problema</th></tr></thead>
+                  <tbody>
+                    {convErrors.map((e) => (
+                      <tr key={e._id}><td className="num muted">{e._id}</td><td className="mono small">{String(e.value)}</td><td className="small">{e.message}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </Modal>

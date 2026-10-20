@@ -1,11 +1,11 @@
 import mysql from 'mysql2/promise';
-import { DATA_TYPES } from '../utils/types.js';
+import { DATA_TYPES, convertValue, ConversionError } from '../utils/types.js';
 import { isValidIdentifier, normalizeHeader } from '../utils/identifiers.js';
 import { HttpError } from '../utils/httpError.js';
 
 const { escapeId } = mysql;
 const MAX_COLUMNS = 200;
-const MAX_TEXT_KEYS = 3; // índice UNIQUE de InnoDB: 3072 bytes; VARCHAR(255) utf8mb4 = 1020 bytes
+export const MAX_TEXT_KEYS = 3; // índice UNIQUE de InnoDB: 3072 bytes; VARCHAR(255) utf8mb4 = 1020 bytes
 
 /** Valida y normaliza la definición de una columna. Devuelve { column, error }. */
 export function normalizeColumn(raw, index) {
@@ -84,3 +84,34 @@ export const addColumnSql = (dbTable, col, afterColumn) =>
 
 export const dropTableSql = (dbTable) => `DROP TABLE IF EXISTS ${escapeId(dbTable)}`;
 export const truncateTableSql = (dbTable) => `TRUNCATE TABLE ${escapeId(dbTable)}`;
+
+const STRING_TYPES = new Set(['text', 'longtext']);
+export const isStringType = (type) => STRING_TYPES.has(type);
+
+/**
+ * Convierte los valores actuales de una columna al tipo nuevo (sin tocar la BD).
+ * rows: [{ _id, value }]. Devuelve { changes: [{ id, from, to }], errors: [{ id, value, message }] }
+ * con los valores como texto canónico, listos para escribirse en una columna de texto.
+ * Con onlyChanged se omiten las filas cuyo texto no cambia.
+ */
+export function planColumnConversion(rows, newType, nullable, onlyChanged = false) {
+  const changes = [];
+  const errors = [];
+  for (const { _id: id, value } of rows) {
+    let converted;
+    try {
+      converted = convertValue(value, newType);
+    } catch (err) {
+      if (!(err instanceof ConversionError)) throw err;
+      errors.push({ id, value, message: err.message });
+      continue;
+    }
+    if (converted === null && !nullable) {
+      errors.push({ id, value, message: 'Valor vacío en una columna obligatoria' });
+      continue;
+    }
+    const to = converted === null ? null : String(converted);
+    if (!onlyChanged || to !== String(value)) changes.push({ id, from: value, to });
+  }
+  return { changes, errors };
+}

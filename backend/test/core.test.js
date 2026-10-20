@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { slugify, isValidIdentifier, normalizeHeader } from '../src/utils/identifiers.js';
 import { convertValue, parseNumber, ConversionError } from '../src/utils/types.js';
 import { parseSheet, mapRows, detectColumns } from '../src/services/excelService.js';
-import { validateColumns, buildCreateTableSql } from '../src/services/schemaService.js';
+import { validateColumns, buildCreateTableSql, planColumnConversion } from '../src/services/schemaService.js';
 
 test('slugify convierte nombres de Excel a identificadores válidos', () => {
   assert.equal(slugify('Número de Orden'), 'numero_de_orden');
@@ -105,4 +105,18 @@ test('validateColumns y SQL de creación', () => {
   const sql = buildCreateTableSql('dh_rpas_transacciones', cols);
   assert.match(sql, /`numero_orden` VARCHAR\(255\) NOT NULL/);
   assert.match(sql, /UNIQUE KEY `uk_upsert` \(`numero_orden`\)/);
+});
+
+test('planColumnConversion convierte valores existentes y reporta los incompatibles', () => {
+  const rows = [{ _id: 1, value: '2026-09-07' }, { _id: 2, value: '07/09/2026' }, { _id: 3, value: 'mañana' }];
+  const { changes, errors } = planColumnConversion(rows, 'date', true, true);
+  assert.deepEqual(changes, [{ id: 2, from: '07/09/2026', to: '2026-09-07' }]);
+  assert.deepEqual(errors.map((e) => e.id), [3]);
+
+  const toText = planColumnConversion([{ _id: 1, value: 1500 }, { _id: 2, value: 0.5 }], 'text', false);
+  assert.deepEqual(toText.changes.map((c) => c.to), ['1500', '0.5']);
+  assert.equal(toText.errors.length, 0);
+
+  const required = planColumnConversion([{ _id: 1, value: '  ' }], 'text', false);
+  assert.equal(required.errors[0].message, 'Valor vacío en una columna obligatoria');
 });
