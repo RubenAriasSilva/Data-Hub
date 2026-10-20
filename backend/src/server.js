@@ -57,5 +57,12 @@ app.use((err, req, res, next) => {
 });
 
 const HOST = process.env.HOST || '0.0.0.0'; // 0.0.0.0 = accesible desde otras computadoras de la red
-app.listen(PORT, HOST, () => console.log(`[api] Data Hub escuchando en http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
+// Express 5 pasa los errores de listen al callback en vez de lanzarlos: se termina el proceso para que PM2 lo muestre
+app.listen(PORT, HOST, (err) => {
+  if (err) {
+    console.error(`[api] No se pudo escuchar en ${HOST}:${PORT}: ${err.code ?? ''} ${err.message}`);
+    process.exit(1);
+  }
+  console.log(`[api] Data Hub escuchando en http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+});
 connectWithRetry();
