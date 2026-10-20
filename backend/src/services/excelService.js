@@ -180,6 +180,17 @@ export function detectColumns(buffer, sheetName) {
 }
 
 /** Genera un .xlsx a partir de encabezados y filas (arreglos). */
+const csvField = (v) => {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** CSV UTF-8 con BOM (para que Power BI y Excel respeten acentos). */
+export function buildCsv(headers, rows) {
+  return `﻿${[headers, ...rows].map((r) => r.map(csvField).join(',')).join('\r\n')}\r\n`;
+}
+
 export function buildWorkbook(headers, rows, sheetName = 'Datos') {
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   ws['!cols'] = headers.map((h) => ({ wch: Math.max(12, String(h).length + 2) }));

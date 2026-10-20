@@ -13,7 +13,7 @@ function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <img src="/ZF_logo.svg" alt="ZF" style={{ width: 34, height: 34 }} />
+        <img src="/Data_Hub.png" alt="Data Hub" style={{ width: 34, height: 34, objectFit: 'contain' }} />
         <div>
           <div className="sidebar-brand-title">Data Hub</div>
           <div className="sidebar-brand-sub">Smart Factory</div>

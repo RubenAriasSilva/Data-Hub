@@ -1,5 +1,0 @@
-<!-- Marcador de posición: reemplazar por el logo oficial ZF_logo_STD_Blue_3CC.svg (ver DESIGN_SYSTEM.md §16) -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <circle cx="32" cy="32" r="30" fill="none" stroke="#2563eb" stroke-width="4"/>
-  <text x="32" y="41" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" fill="#2563eb">DH</text>
-</svg>

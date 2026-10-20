@@ -14,15 +14,74 @@ Stack: **Express 5 + React 18 (Vite) + Node.js + MySQL 8**.
 Ver **[DEPLOY.md](DEPLOY.md)**. Resumen:
 
 - **Windows:** `instalar-windows.cmd` instala MySQL como servicio (sin XAMPP) y deja la app corriendo con PM2 y arranque automático.
-- **Linux:** `bash scripts/linux/install.sh`.
+- **Linux:** `bash scripts/linux/install.sh` (detalle abajo).
+
+### Linux (Ubuntu 22.04 / 24.04)
+
+El script `scripts/linux/install.sh` instala MySQL como servicio, compila el frontend y deja la app corriendo con PM2. La app arranca sola al encender el servidor.
+
+**Requisitos:** un usuario con `sudo`, acceso a internet, y `git` y `curl` instalados (`sudo apt-get install -y git curl`).
+
+1. **Instala Node.js 20 o superior** (si `node --version` no responde o es menor):
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+   sudo apt-get install -y nodejs
+   ```
+2. **Clona el repositorio.** El servidor despliega la rama que clones: los cambios tienen que estar en `main`, o indica la rama con `-b`.
+   ```bash
+   git clone https://github.com/RubenAriasSilva/Data-Hub.git
+   cd Data-Hub
+   ```
+3. **Ejecuta el instalador**, sin `sudo`. El script lo pide solo cuando lo necesita:
+   ```bash
+   bash scripts/linux/install.sh                # instala MySQL si falta y despliega
+   bash scripts/linux/install.sh --skip-mysql   # si ya tienes MySQL: antes edita backend/.env (cp backend/.env.example backend/.env)
+   ```
+   El script hace lo siguiente:
+   - instala `mysql-server` y lo habilita en systemd;
+   - crea la base `data_hub` y el usuario `datahub` con una contraseña aleatoria, y la guarda en `backend/.env`;
+   - instala las dependencias y compila el frontend;
+   - arranca la app con PM2 y registra PM2 en systemd;
+   - verifica `/api/health` y muestra las URLs de acceso.
+4. **Abre el puerto** si el servidor tiene firewall, para que otras computadoras entren:
+   ```bash
+   sudo ufw allow 4000/tcp
+   ```
+5. **Comprueba** que la app responde:
+   ```bash
+   curl http://localhost:4000/api/health   # {"status":"ok",...}
+   ```
+   Luego abre `http://<ip-del-servidor>:4000` en el navegador.
+
+**Actualizar a una nueva versión:**
+```bash
+cd Data-Hub && git pull && bash scripts/linux/install.sh --skip-mysql
+```
+
+**Operación:**
+- Estado: `pm2 status`
+- Logs: `pm2 logs data-hub`
+- Reiniciar tras editar `backend/.env`: `pm2 restart data-hub --update-env`
+- MySQL: `sudo systemctl status mysql`
+
+Respaldo, configuración y problemas comunes: ver [DEPLOY.md](DEPLOY.md).
+
+> **Debian:** no trae el paquete `mysql-server`, así que el instalador falla en ese paso. Instala antes MySQL o MariaDB (`sudo apt-get install -y mariadb-server`), configura `backend/.env` y ejecuta el script con `--skip-mysql`.
 
 ## Desarrollo
 
-```bash
-npm run install:all
-cp backend/.env.example backend/.env   # editar credenciales de MySQL
-npm run dev                            # API en :4000 y frontend en :5173
-```
+1. Necesitas un MySQL corriendo. En Windows, la forma más simple es instalarlo como servicio con `scripts\windows\setup-mysql.ps1` (ver [DEPLOY.md](DEPLOY.md)). Ese script también crea `backend\.env` con las credenciales.
+2. Instala las dependencias:
+   ```
+   npm run install:all
+   ```
+3. Solo si no usaste `setup-mysql.ps1`, crea el `.env` y edita las credenciales:
+   - CMD: `copy backend\.env.example backend\.env`
+   - PowerShell / Linux: `cp backend/.env.example backend/.env`
+4. Arranca en modo desarrollo (API en http://localhost:4000, frontend en http://localhost:5173):
+   ```
+   npm run dev
+   ```
 
 Al arrancar, el backend crea la base de datos (`DB_NAME`), las tablas de metadatos y la categoría **RPAs**. Si MySQL no está disponible, la API responde 503 y reintenta la conexión cada 10 s.
 
@@ -33,33 +92,28 @@ Producción: `npm run build` y luego `npm start`. El backend sirve el frontend c
 1. **Crear tabla** (Categoría → *Nueva tabla*): para cada columna se define el *nombre en Excel* (puede tener espacios, acentos, símbolos), el *nombre en BD* (se sugiere automáticamente, p. ej. `Número de Orden` → `numero_de_orden`), el *tipo* y si es *clave*. Con *Detectar desde Excel* se proponen las columnas a partir de un archivo de ejemplo.
 2. La tabla física se llama `dh_<categoria>_<tabla>` e incluye `_id`, `_created_at` y `_updated_at`. Las columnas clave forman un índice `UNIQUE`.
 3. **Cargar Excel**: los encabezados se comparan sin distinguir mayúsculas, acentos ni espacios extra. Se hace **upsert**: si la clave ya existe, la fila se actualiza; si no, se inserta. Las filas con valores inválidos se rechazan individualmente y se reportan (fila, columna, motivo). Cada carga queda en el **Historial**.
+4. **Editar columnas** (pestaña *Estructura*): se puede cambiar el nombre en Excel, el nombre en BD y el tipo. Al cambiar el tipo, los datos existentes se convierten; si algún valor no es compatible, se listan los problemas y la tabla no se modifica.
 
 Tipos: Texto (`VARCHAR(255)`), Texto largo (`TEXT`), Entero (`BIGINT`), Decimal (`DECIMAL(18,4)`), Fecha (`DATE`), Fecha y hora (`DATETIME`), Booleano (`TINYINT(1)`). Las fechas en texto se aceptan como `AAAA-MM-DD` o `DD/MM/AAAA`.
 
-## API para aplicaciones / RPAs
+## API pública
 
-Sin autenticación (pensada para red interna). Base: `http://<servidor>:4000/api/v1`
+Sin autenticación (pensada para red interna). Base: `http://<servidor>:4000/api/v1`. Cada tabla tiene salidas y entradas:
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/api/v1` | Catálogo de tablas |
-| GET | `/api/v1/:categoria/:tabla` | Leer registros: `page`, `limit` (≤5000), `sort`, `order`, `q`, `updated_since`, `<columna>=<valor>` |
-| GET | `/api/v1/:categoria/:tabla/schema` | Columnas, tipos y claves |
-| GET | `/api/v1/:categoria/:tabla/export` | Descargar .xlsx |
-| POST | `/api/v1/:categoria/:tabla` | Upsert JSON: `[{...}]` o `{ "rows": [{...}] }` (llaves por nombre en BD o en Excel) |
-| POST | `/api/v1/:categoria/:tabla/upload` | Upsert desde Excel (multipart, campo `file`) |
-| DELETE | `/api/v1/:categoria/:tabla?<clave>=<valor>` | Eliminar por clave |
+| GET | `/api/v1/:categoria/:tabla` | **Salida (Power BI)**: CSV con todas las filas y los encabezados originales del Excel |
+| GET | `/api/v1/:categoria/:tabla?format=json` | **Salida (apps/RPAs)**: JSON paginado (`page`, `limit` ≤ 5000, `sort`, `order`, `q`, `updated_since`, `?<columna>=valor`). También con `Accept: application/json` |
+| POST | `/api/v1/:categoria/:tabla/upload` | **Entrada**: upsert desde Excel (multipart, campo `file`) |
 
-Las escrituras responden `200` (`status: success | partial`) o `422` si ninguna fila fue válida, con `inserted`, `updated`, `failed` y `errors`.
+Power BI: *Obtener datos → Web*, pegar la URL del GET y *Cargar*.
 
-En la pestaña **API** de cada tabla hay ejemplos listos para copiar (curl y Python).
+La carga responde `200` (`status: success | partial`) o `422` si ninguna fila fue válida, con `inserted`, `updated`, `failed` y `errors`.
+
+En la pestaña **API** de cada tabla hay ejemplos listos para copiar (Power BI, curl y Python).
 
 ## Pruebas
 
 ```bash
 npm test   # pruebas unitarias del backend (conversión de tipos, lectura de Excel, validación)
 ```
-
-## Pendiente
-
-- Reemplazar `frontend/public/ZF_logo.svg` (es un marcador de posición) por el logo oficial `ZF_logo_STD_Blue_3CC.svg`.

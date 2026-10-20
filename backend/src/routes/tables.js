@@ -2,14 +2,16 @@ import { Router } from 'express';
 import { getPool } from '../config/db.js';
 import { getTableMetaById, listTablesWithStats, countRows } from '../services/metaService.js';
 import {
-  validateColumns, normalizeColumn, buildCreateTableSql, addColumnSql, dropTableSql, truncateTableSql,
+  validateColumns, normalizeColumn, buildCreateTableSql, addColumnSql, dropTableSql, truncateTableSql, MAX_TEXT_KEYS,
 } from '../services/schemaService.js';
+import { alterColumn } from '../services/columnService.js';
 import { detectColumns, buildWorkbook } from '../services/excelService.js';
 import { importExcel, resultHttpStatus } from '../services/importService.js';
 import { queryRows, allRows, deleteById, SYSTEM_COLUMNS } from '../services/dataService.js';
 import { slugify, isValidIdentifier, normalizeHeader } from '../utils/identifiers.js';
 import { excelUpload, sendXlsx } from '../utils/upload.js';
 import { HttpError } from '../utils/httpError.js';
+import { DATA_TYPES } from '../utils/types.js';
 
 const router = Router();
 const RESERVED_QUERY = new Set(['page', 'limit', 'sort', 'order', 'q', 'updated_since']);
@@ -123,17 +125,38 @@ router.post('/:id/columns', async (req, res) => {
   res.status(201).json(await tableResponse(meta.table.id));
 });
 
-// Cambiar el nombre en Excel de una columna (el nombre en BD es inmutable)
+// Editar una columna: nombre en Excel, nombre en BD y tipo (los datos existentes se convierten)
 router.put('/:id/columns/:columnId', async (req, res) => {
   const meta = await getTableMetaById(req.params.id);
   const col = meta.columns.find((c) => String(c.id) === String(req.params.columnId));
   if (!col) throw new HttpError(404, 'Columna no encontrada');
-  const excelName = String(req.body?.excel_name ?? '').trim();
+  const body = req.body ?? {};
+  const excelName = String(body.excel_name ?? col.excel_name).trim();
+  const dbName = String(body.db_name ?? col.db_name).trim();
+  const dataType = String(body.data_type ?? col.data_type);
+  const others = meta.columns.filter((c) => c.id !== col.id);
+
   if (!excelName || excelName.length > 255) throw new HttpError(400, 'El nombre en Excel es obligatorio (máx. 255)');
-  if (meta.columns.some((c) => c.id !== col.id && normalizeHeader(c.excel_name) === normalizeHeader(excelName))) {
+  if (others.some((c) => normalizeHeader(c.excel_name) === normalizeHeader(excelName))) {
     throw new HttpError(409, `El nombre en Excel "${excelName}" ya está en uso`);
   }
-  await getPool().query('UPDATE hub_columns SET excel_name = ? WHERE id = ?', [excelName, col.id]);
+  if (!isValidIdentifier(dbName)) {
+    throw new HttpError(400, 'El nombre en BD debe iniciar con letra y contener solo minúsculas, números y _ (máx. 64)');
+  }
+  if (others.some((c) => c.db_name === dbName) || SYSTEM_COLUMNS.includes(dbName)) {
+    throw new HttpError(409, `La columna "${dbName}" ya existe`);
+  }
+  if (!DATA_TYPES[dataType]) throw new HttpError(400, `Tipo inválido: ${dataType}`);
+  if (col.is_key && dataType === 'longtext') throw new HttpError(400, 'Una columna clave no puede ser Texto largo');
+  if (col.is_key && dataType === 'text' && others.filter((c) => c.is_key && c.data_type === 'text').length >= MAX_TEXT_KEYS) {
+    throw new HttpError(400, `Máximo ${MAX_TEXT_KEYS} columnas clave de tipo Texto`);
+  }
+
+  await alterColumn(meta, col, { dbName, dataType });
+  await getPool().query(
+    'UPDATE hub_columns SET excel_name = ?, db_name = ?, data_type = ? WHERE id = ?',
+    [excelName, dbName, dataType, col.id],
+  );
   res.json(await tableResponse(meta.table.id));
 });
 

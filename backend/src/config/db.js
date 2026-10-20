@@ -3,7 +3,8 @@ import { migrate } from '../db/migrate.js';
 import { HttpError } from '../utils/httpError.js';
 
 const config = () => ({
-  host: process.env.DB_HOST || 'localhost',
+  // 127.0.0.1 y no "localhost": Node puede resolver localhost a IPv6 (::1) y MySQL suele escuchar solo en IPv4
+  host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
@@ -55,7 +56,14 @@ export async function connectWithRetry(delayMs = 10000) {
     await initDatabase();
     console.log(`[db] Conectado a MySQL ${config().host}:${config().port}/${dbState().database}`);
   } catch (err) {
-    lastError = err.code ? `${err.code} ${err.message}` : err.message;
+    const { host, port } = config();
+    const hints = {
+      ECONNREFUSED: `nada escucha en ${host}:${port}; ¿está iniciado MySQL y es correcto DB_PORT?`,
+      ER_ACCESS_DENIED_ERROR: 'usuario o contraseña incorrectos (DB_USER / DB_PASSWORD)',
+      ENOTFOUND: `no se encontró el host "${host}" (DB_HOST)`,
+      ETIMEDOUT: `${host}:${port} no responde (¿firewall o IP incorrecta?)`,
+    };
+    lastError = `${err.code ?? 'ERROR'}: ${hints[err.code] ?? (err.message || 'error desconocido')}`;
     console.error(`[db] No se pudo conectar a MySQL (${lastError}). Reintentando en ${delayMs / 1000}s...`);
     setTimeout(() => connectWithRetry(delayMs), delayMs);
   }
