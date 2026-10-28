@@ -5,6 +5,7 @@ import { slugify, isValidIdentifier, normalizeHeader } from '../src/utils/identi
 import { convertValue, parseNumber, ConversionError } from '../src/utils/types.js';
 import { parseSheet, mapRows, detectColumns } from '../src/services/excelService.js';
 import { validateColumns, buildCreateTableSql, planColumnConversion } from '../src/services/schemaService.js';
+import { parseCreateTable, parseAlterTable, planAlter, toCreateSql } from '../src/services/sqlService.js';
 
 test('slugify convierte nombres de Excel a identificadores válidos', () => {
   assert.equal(slugify('Número de Orden'), 'numero_de_orden');
@@ -119,4 +120,75 @@ test('planColumnConversion convierte valores existentes y reporta los incompatib
 
   const required = planColumnConversion([{ _id: 1, value: '  ' }], 'text', false);
   assert.equal(required.errors[0].message, 'Valor vacío en una columna obligatoria');
+});
+
+test('parseCreateTable traduce tipos, claves y nombres de Excel', () => {
+  const r = parseCreateTable(`
+    -- tabla de órdenes
+    CREATE TABLE IF NOT EXISTS \`Ordenes\` (
+      Orden BIGINT NOT NULL COMMENT 'Orden',
+      autor VARCHAR(255) COMMENT 'Autor de la orden',
+      inicio DATE,
+      monto DECIMAL(18,4) DEFAULT 0,
+      cerrada TINYINT(1),
+      notas TEXT,
+      PRIMARY KEY (orden)
+    ) ENGINE=InnoDB;`);
+  assert.equal(r.slug, 'ordenes');
+  assert.deepEqual(r.columns.map((c) => c.data_type), ['int', 'text', 'date', 'decimal', 'boolean', 'longtext']);
+  assert.deepEqual(r.columns[0], { excel_name: 'Orden', db_name: 'orden', data_type: 'int', is_key: true, nullable: false });
+  assert.equal(r.columns[1].excel_name, 'Autor de la orden');
+  assert.equal(r.columns[2].excel_name, 'inicio');
+  assert.ok(r.warnings.some((w) => /DEFAULT/.test(w)));
+  validateColumns(r.columns);
+
+  assert.equal(parseCreateTable('CREATE TABLE t (a INT UNIQUE, b VARCHAR(10))').columns[0].is_key, true);
+  assert.throws(() => parseCreateTable('CREATE TABLE t (\n  a GEOMETRY\n)'), /Línea 2: Tipo no soportado/);
+  assert.throws(() => parseCreateTable('CREATE TABLE t (a INT, PRIMARY KEY (b))'), /no está definida/);
+  assert.throws(() => parseCreateTable('CREATE TABLE t (_id INT)'), /sistema/);
+  assert.throws(() => parseCreateTable('DROP TABLE t'), /CREATE/);
+});
+
+test('parseAlterTable reconoce cada cláusula y varias sentencias', () => {
+  const { tables, ops } = parseAlterTable(`
+    ALTER TABLE ordenes ADD COLUMN moneda VARCHAR(255) COMMENT 'Moneda', MODIFY COLUMN autor TEXT;
+    ALTER TABLE ordenes CHANGE inicio inicio_programado DATETIME, RENAME COLUMN monto TO total, DROP COLUMN notas;`);
+  assert.deepEqual(tables.map((t) => t.name), ['ordenes', 'ordenes']);
+  assert.deepEqual(ops.map((o) => o.op), ['add', 'modify', 'change', 'rename', 'drop']);
+  assert.equal(ops[2].name, 'inicio');
+  assert.equal(ops[2].column.db_name, 'inicio_programado');
+  assert.equal(ops[3].to, 'total');
+  assert.throws(() => parseAlterTable('ALTER TABLE t ADD INDEX i (a)'), /índices/);
+  assert.throws(() => parseAlterTable('ALTER TABLE t RENAME TO x'), /no soportada/);
+});
+
+test('planAlter valida en orden sobre la tabla y rechaza cambios inválidos', () => {
+  const meta = {
+    table: { slug: 'ordenes', db_table: 'dh_rpas_ordenes' },
+    columns: [
+      { id: 1, excel_name: 'Orden', db_name: 'orden', data_type: 'int', is_key: true, nullable: false, position: 0 },
+      { id: 2, excel_name: 'Autor', db_name: 'autor', data_type: 'text', is_key: false, nullable: true, position: 1 },
+    ],
+  };
+  const { steps } = planAlter(meta, `ALTER TABLE dh_rpas_ordenes
+    ADD moneda VARCHAR(255) COMMENT 'Moneda', MODIFY autor TEXT COMMENT 'Autor', RENAME COLUMN moneda TO divisa, DROP autor`);
+  assert.deepEqual(steps.map((s) => s.kind), ['add', 'update', 'update', 'drop']);
+  assert.equal(steps[1].changes.data_type, 'longtext');
+  assert.equal(steps[2].column, 'moneda'); // renombra la columna agregada en el mismo SQL
+  assert.equal(steps[3].column, 'autor');
+
+  assert.throws(() => planAlter(meta, 'ALTER TABLE otra DROP autor'), /esta tabla es "ordenes"/);
+  assert.throws(() => planAlter(meta, 'ALTER TABLE ordenes DROP orden'), /clave/);
+  assert.throws(() => planAlter(meta, 'ALTER TABLE ordenes ADD x INT NOT NULL'), /opcionales/);
+  assert.throws(() => planAlter(meta, 'ALTER TABLE ordenes ADD autor INT'), /ya existe/);
+  assert.throws(() => planAlter(meta, 'ALTER TABLE ordenes MODIFY nada INT'), /no existe/);
+  assert.throws(() => planAlter(meta, 'ALTER TABLE ordenes MODIFY orden TEXT'), /Texto largo/);
+});
+
+test('toCreateSql genera SQL que el propio intérprete entiende', () => {
+  const columns = validateColumns(COLUMNS);
+  const back = parseCreateTable(toCreateSql('transacciones', columns));
+  assert.deepEqual(back.columns, columns.map(({ excel_name, db_name, data_type, is_key, nullable }) => ({
+    excel_name, db_name, data_type, is_key, nullable,
+  })));
 });

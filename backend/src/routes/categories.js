@@ -32,14 +32,43 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
+async function getApplication(category, appSlug) {
+  const [[app]] = await getPool().query('SELECT * FROM applications WHERE category_id = ? AND slug = ?', [category.id, appSlug]);
+  if (!app) throw new HttpError(404, 'Aplicación no encontrada');
+  return app;
+}
+
+const tableDetail = async (meta) => ({ ...meta.table, columns: meta.columns, row_count: await countRows(meta.table.db_table) });
+
+// Categoría con sus aplicaciones y sus tablas directas (las que no pertenecen a una aplicación)
 router.get('/:slug', async (req, res) => {
   const category = await getCategory('slug', req.params.slug);
-  res.json({ ...category, tables: await listTablesWithStats(category.id) });
+  const [applications] = await getPool().query(
+    `SELECT a.*, COUNT(t.id) AS table_count
+     FROM applications a LEFT JOIN hub_tables t ON t.application_id = a.id
+     WHERE a.category_id = ? GROUP BY a.id ORDER BY a.name`,
+    [category.id],
+  );
+  res.json({ ...category, applications, tables: await listTablesWithStats({ categoryId: category.id, applicationId: null }) });
 });
 
 router.get('/:slug/tables/:tableSlug', async (req, res) => {
-  const meta = await getTableMetaBySlug(req.params.slug, req.params.tableSlug);
-  res.json({ ...meta.table, columns: meta.columns, row_count: await countRows(meta.table.db_table) });
+  res.json(await tableDetail(await getTableMetaBySlug(req.params.slug, null, req.params.tableSlug)));
+});
+
+router.get('/:slug/apps/:appSlug', async (req, res) => {
+  const category = await getCategory('slug', req.params.slug);
+  const app = await getApplication(category, req.params.appSlug);
+  res.json({
+    ...app,
+    category_slug: category.slug,
+    category_name: category.name,
+    tables: await listTablesWithStats({ categoryId: category.id, applicationId: app.id }),
+  });
+});
+
+router.get('/:slug/apps/:appSlug/tables/:tableSlug', async (req, res) => {
+  res.json(await tableDetail(await getTableMetaBySlug(req.params.slug, req.params.appSlug, req.params.tableSlug)));
 });
 
 router.post('/', async (req, res) => {
@@ -75,6 +104,8 @@ router.delete('/:id', async (req, res) => {
   await getCategory('id', req.params.id);
   const [[{ n }]] = await getPool().query('SELECT COUNT(*) AS n FROM hub_tables WHERE category_id = ?', [req.params.id]);
   if (n > 0) throw new HttpError(409, 'La categoría tiene tablas. Elimínalas primero.');
+  const [[{ apps }]] = await getPool().query('SELECT COUNT(*) AS apps FROM applications WHERE category_id = ?', [req.params.id]);
+  if (apps > 0) throw new HttpError(409, 'La categoría tiene aplicaciones. Elimínalas primero.');
   await getPool().query('DELETE FROM categories WHERE id = ?', [req.params.id]);
   res.status(204).end();
 });

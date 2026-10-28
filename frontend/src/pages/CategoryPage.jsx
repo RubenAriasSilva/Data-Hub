@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Plus, Table2, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Table2, Pencil, Trash2, AppWindow } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
-import { Badge, Loading, EmptyState, Alert, CategoryIcon } from '../components/ui';
+import { Loading, EmptyState, Alert, CategoryIcon } from '../components/ui';
 import CategoryFormModal from '../components/CategoryFormModal';
-import { fmtNumber, fmtRelative, STATUS } from '../utils/format';
+import TableCards from '../components/TableCards';
 
 export default function CategoryPage() {
   const { categorySlug } = useParams();
@@ -14,6 +14,7 @@ export default function CategoryPage() {
   const [category, setCategory] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [creatingApp, setCreatingApp] = useState(false);
   const ready = health?.db?.ready;
 
   const load = useCallback(async () => {
@@ -45,6 +46,8 @@ export default function CategoryPage() {
   if (error) return <Alert type="error">{error}</Alert>;
   if (!category) return ready ? <Loading /> : null;
 
+  const empty = category.tables.length === 0 && category.applications.length === 0;
+
   return (
     <>
       <div className="page-header">
@@ -57,53 +60,64 @@ export default function CategoryPage() {
         </div>
         <div className="row">
           <button type="button" className="btn-ghost" onClick={() => setEditing(true)}><Pencil size={15} /> Editar</button>
-          {category.tables.length === 0 && (
+          {empty && (
             <button type="button" className="btn-ghost" onClick={remove}><Trash2 size={15} /> Eliminar</button>
           )}
+          <button type="button" className="btn-secondary" onClick={() => setCreatingApp(true)}><AppWindow size={16} /> Nueva aplicación</button>
           <Link to={`/c/${category.slug}/new`} className="btn-primary"><Plus size={16} /> Nueva tabla</Link>
         </div>
       </div>
 
-      {category.tables.length === 0 ? (
+      {empty ? (
         <div className="glass">
           <EmptyState
             icon={Table2} title="Esta categoría aún no tiene tablas"
             action={<Link to={`/c/${category.slug}/new`} className="btn-primary"><Plus size={16} /> Crear tabla</Link>}
           >
-            Crea una tabla definiendo sus columnas, o detéctalas a partir de un Excel de ejemplo.
+            Crea una tabla directamente en la categoría, o agrúpalas por aplicación con “Nueva aplicación”.
           </EmptyState>
         </div>
       ) : (
-        <div className="grid grid-cards">
-          {category.tables.map((t) => (
-            <div
-              key={t.id} className="glass clickable table-card animate-in"
-              onClick={() => navigate(`/c/${category.slug}/t/${t.slug}`)}
-            >
-              <div className="table-card-head">
-                <div className="table-card-icon"><Table2 size={18} /></div>
-                <div style={{ minWidth: 0 }}>
-                  <div className="table-card-name">{t.name}</div>
-                  <div className="mono muted small">{t.db_table}</div>
-                </div>
-              </div>
-              {t.description && <div className="muted small">{t.description}</div>}
-              <div className="table-card-meta">
-                <span><strong>{fmtNumber(t.row_count)}</strong> registros</span>
-                <span><strong>{t.column_count}</strong> columnas</span>
-              </div>
-              <div className="row">
-                {t.last_upload_status
-                  ? <Badge color={STATUS[t.last_upload_status]?.color}>{STATUS[t.last_upload_status]?.label}</Badge>
-                  : <Badge color="gray">Sin cargas</Badge>}
-                <span className="muted small">{fmtRelative(t.last_upload_at)}</span>
+        <div className="stack">
+          {category.applications.length > 0 && (
+            <div>
+              <p className="section-title">Aplicaciones</p>
+              <div className="grid grid-cards">
+                {category.applications.map((a) => (
+                  <div
+                    key={a.id} className="glass clickable table-card animate-in"
+                    onClick={() => navigate(`/c/${category.slug}/a/${a.slug}`)}
+                  >
+                    <div className="table-card-head">
+                      <div className="table-card-icon"><AppWindow size={18} /></div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="table-card-name">{a.name}</div>
+                        <div className="mono muted small">{a.slug}</div>
+                      </div>
+                    </div>
+                    {a.description && <div className="muted small">{a.description}</div>}
+                    <div className="table-card-meta">
+                      <span><strong>{a.table_count}</strong> {Number(a.table_count) === 1 ? 'tabla' : 'tablas'}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          )}
+          {category.tables.length > 0 && (
+            <div>
+              {category.applications.length > 0 && <p className="section-title">Tablas</p>}
+              <TableCards tables={category.tables} />
+            </div>
+          )}
         </div>
       )}
 
       <CategoryFormModal open={editing} category={category} onClose={() => setEditing(false)} onSaved={load} />
+      <CategoryFormModal
+        open={creatingApp} kind="application" categoryId={category.id} onClose={() => setCreatingApp(false)}
+        onSaved={(app) => navigate(`/c/${category.slug}/a/${app.slug}`)}
+      />
     </>
   );
 }

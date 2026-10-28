@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Badge, CodeBlock, Alert } from '../../components/ui';
 import { publicApiBase } from '../../api/client';
+import { apiPath } from '../../utils/format';
 
 const METHOD_COLORS = { GET: 'blue', POST: 'green' };
 
@@ -20,7 +21,7 @@ function Endpoint({ method, url, title, children }) {
 
 export default function ApiTab({ table }) {
   const [base] = useState(publicApiBase);
-  const url = `${base}/api/v1/${table.category_slug}/${table.slug}`;
+  const url = `${base}${apiPath(table)}`;
   const keys = table.columns.filter((c) => c.is_key);
   const [uploadOs, setUploadOs] = useState('Windows');
   const uploadExamples = {

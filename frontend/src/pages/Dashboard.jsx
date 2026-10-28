@@ -4,7 +4,7 @@ import { FolderTree, Table2, Rows3, UploadCloud, History } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { Badge, Loading, EmptyState } from '../components/ui';
-import { fmtNumber, fmtDateTime, STATUS } from '../utils/format';
+import { fmtNumber, fmtDateTime, STATUS, tablePath } from '../utils/format';
 
 function Metric({ icon: Icon, label, value, sub }) {
   return (
@@ -59,10 +59,10 @@ export default function Dashboard() {
                     <thead><tr><th>Tabla</th><th>Origen</th><th className="num">Filas</th><th>Estado</th><th>Fecha</th></tr></thead>
                     <tbody>
                       {stats.recent.map((u) => (
-                        <tr key={u.id} className="clickable" onClick={() => navigate(`/c/${u.category_slug}/t/${u.table_slug}?tab=history`)}>
+                        <tr key={u.id} className="clickable" onClick={() => navigate(`${tablePath(u)}?tab=history`)}>
                           <td>
                             <div style={{ fontWeight: 600 }}>{u.table_name}</div>
-                            <div className="muted small">{u.category_name}</div>
+                            <div className="muted small">{u.category_name}{u.application_name ? ` · ${u.application_name}` : ''}</div>
                           </td>
                           <td><Badge color={u.source === 'api' ? 'blue' : 'gray'}>{u.source === 'api' ? 'API' : 'Excel'}</Badge></td>
                           <td className="num">{fmtNumber(u.rows_total)}</td>
@@ -87,8 +87,8 @@ export default function Dashboard() {
                     <tbody>
                       {stats.top_tables.map((t) => (
                         <tr key={t.id}>
-                          <td><Link to={`/c/${t.category_slug}/t/${t.slug}`} style={{ fontWeight: 600 }}>{t.name}</Link></td>
-                          <td className="muted">{t.category_name}</td>
+                          <td><Link to={tablePath(t)} style={{ fontWeight: 600 }}>{t.name}</Link></td>
+                          <td className="muted">{t.category_name}{t.application_name ? ` · ${t.application_name}` : ''}</td>
                           <td className="num">{fmtNumber(t.row_count)}</td>
                         </tr>
                       ))}

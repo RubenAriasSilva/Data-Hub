@@ -90,22 +90,43 @@ Respaldo, configuración y problemas comunes: ver [DEPLOY.md](DEPLOY.md).
    npm run dev
    ```
 
+Si en el mismo equipo ya corre producción (PM2 en el puerto 4000 con la base `data_hub`), crea `backend/.env.local` para no chocar con ella ni tocar sus datos. No se versiona, sobrescribe lo que haya en `.env` y producción (`NODE_ENV=production`) lo ignora; el frontend de desarrollo usa ese mismo puerto:
+```
+PORT=4001
+DB_NAME=data_hub_dev
+```
+
 Al arrancar, el backend crea la base de datos (`DB_NAME`), las tablas de metadatos y la categoría **RPAs**. Si MySQL no está disponible, la API responde 503 y reintenta la conexión cada 10 s.
 
 Producción: `npm run build` y luego `npm start`. El backend sirve el frontend compilado en el mismo puerto.
 
 ## Cómo funciona
 
-1. **Crear tabla** (Categoría → *Nueva tabla*): para cada columna se define el *nombre en Excel* (puede tener espacios, acentos, símbolos), el *nombre en BD* (se sugiere automáticamente, p. ej. `Número de Orden` → `numero_de_orden`), el *tipo* y si es *clave*. Con *Detectar desde Excel* se proponen las columnas a partir de un archivo de ejemplo.
-2. La tabla física se llama `dh_<categoria>_<tabla>` e incluye `_id`, `_created_at` y `_updated_at`. Las columnas clave forman un índice `UNIQUE`.
+0. **Organización**: cada categoría puede tener tablas directas (p. ej. *RPAs → iw39*) y/o **aplicaciones** que agrupan tablas (*Categoría → Aplicación → Tablas*). Las aplicaciones se crean desde la página de la categoría (*Nueva aplicación*).
+1. **Crear tabla** (Categoría o Aplicación → *Nueva tabla*): para cada columna se define el *nombre en Excel* (puede tener espacios, acentos, símbolos), el *nombre en BD* (se sugiere automáticamente, p. ej. `Número de Orden` → `numero_de_orden`), el *tipo* y si es *clave*. Con *Detectar desde Excel* se proponen las columnas a partir de un archivo de ejemplo. En la pestaña **SQL** se puede escribir un `CREATE TABLE` (ver *Modo SQL*).
+2. La tabla física se llama `dh_<categoria>_<tabla>` (o `dh_<categoria>_<aplicacion>_<tabla>`, máx. 64 caracteres) e incluye `_id`, `_created_at` y `_updated_at`. Las columnas clave forman un índice `UNIQUE`.
 3. **Cargar Excel**: los encabezados se comparan sin distinguir mayúsculas, acentos ni espacios extra. Se hace **upsert**: si la clave ya existe, la fila se actualiza; si no, se inserta. Las filas con valores inválidos se rechazan individualmente y se reportan (fila, columna, motivo). Cada carga queda en el **Historial**.
-4. **Editar columnas** (pestaña *Estructura*): se puede cambiar el nombre en Excel, el nombre en BD y el tipo. Al cambiar el tipo, los datos existentes se convierten; si algún valor no es compatible, se listan los problemas y la tabla no se modifica.
+4. **Editar columnas** (pestaña *Estructura*): se puede cambiar el nombre en Excel, el nombre en BD y el tipo. Al cambiar el tipo, los datos existentes se convierten; si algún valor no es compatible, se listan los problemas y la tabla no se modifica. También se puede hacer con *Editar con SQL*.
 
 Tipos: Texto (`VARCHAR(255)`), Texto largo (`TEXT`), Entero (`BIGINT`), Decimal (`DECIMAL(18,4)`), Fecha (`DATE`), Fecha y hora (`DATETIME`), Booleano (`TINYINT(1)`). Las fechas en texto se aceptan como `AAAA-MM-DD` o `DD/MM/AAAA`.
 
+### Modo SQL
+
+El SQL no se ejecuta en MySQL: el Data Hub lo interpreta (dialecto MySQL) y lo aplica con las mismas validaciones que el formulario.
+
+- **Crear** (`CREATE TABLE`): `COMMENT '…'` es el nombre en Excel (si falta, se usa el nombre de la columna); `PRIMARY KEY`/`UNIQUE` marcan la clave. Tipos: `VARCHAR/CHAR` → Texto, `TEXT` → Texto largo, `INT/BIGINT/SMALLINT` → Entero, `DECIMAL/FLOAT/DOUBLE` → Decimal, `DATE`, `DATETIME/TIMESTAMP`, `BOOLEAN/TINYINT(1)`. El resultado se carga en el formulario para revisarlo antes de crear.
+- **Editar** (`ALTER TABLE`, pestaña *Estructura → Editar con SQL*): `ADD COLUMN` (siempre opcional y no clave), `MODIFY COLUMN` / `CHANGE COLUMN` (cambia tipo convirtiendo los datos, nombre en BD y, con `COMMENT`, el nombre en Excel), `RENAME COLUMN a TO b` y `DROP COLUMN` (no en columnas clave). Primero *Vista previa* muestra los pasos; el DDL de MySQL no es transaccional, así que si un paso falla los anteriores quedan aplicados y se indica cuál falló.
+
+```sql
+ALTER TABLE ordenes
+  ADD COLUMN moneda VARCHAR(255) COMMENT 'Moneda',
+  MODIFY COLUMN autor TEXT,
+  RENAME COLUMN monto TO total;
+```
+
 ## API pública
 
-Sin autenticación (pensada para red interna). Base: `http://<servidor>:4000/api/v1`. Cada tabla tiene salidas y entradas:
+Sin autenticación (pensada para red interna). Base: `http://<servidor>:4000/api/v1`. Cada tabla tiene salidas y entradas. Para tablas dentro de una aplicación la ruta incluye la aplicación: `/api/v1/:categoria/:aplicacion/:tabla` (y `.../upload`).
 
 | Método | Ruta | Descripción |
 |---|---|---|

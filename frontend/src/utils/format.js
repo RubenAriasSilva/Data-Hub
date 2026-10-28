@@ -11,6 +11,13 @@ export const DATA_TYPES = {
 
 export const IDENT_RE = /^[a-z][a-z0-9_]{0,63}$/;
 
+// Rutas de una tabla, directa de la categoría o dentro de una aplicación.
+// Acepta filas de la API (category_slug, application_slug, slug | table_slug).
+const appSegment = (t) => (t.application_slug ? `/a/${t.application_slug}` : '');
+export const parentPath = (t) => `/c/${t.category_slug}${appSegment(t)}`;
+export const tablePath = (t) => `${parentPath(t)}/t/${t.table_slug ?? t.slug}`;
+export const apiPath = (t) => `/api/v1/${t.category_slug}${t.application_slug ? `/${t.application_slug}` : ''}/${t.table_slug ?? t.slug}`;
+
 export function slugify(input, max = 64) {
   let s = String(input ?? '')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')

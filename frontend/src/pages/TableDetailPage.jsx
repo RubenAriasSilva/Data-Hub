@@ -20,7 +20,7 @@ const TABS = [
 ];
 
 export default function TableDetailPage() {
-  const { categorySlug, tableSlug } = useParams();
+  const { categorySlug, appSlug, tableSlug } = useParams();
   const [params, setParams] = useSearchParams();
   const { health } = useApp();
   const [table, setTable] = useState(null);
@@ -31,12 +31,12 @@ export default function TableDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      setTable(await api.get(`/categories/${categorySlug}/tables/${tableSlug}`));
+      setTable(await api.get(`/categories/${categorySlug}${appSlug ? `/apps/${appSlug}` : ''}/tables/${tableSlug}`));
       setError(null);
     } catch (err) {
       setError(err.message);
     }
-  }, [categorySlug, tableSlug]);
+  }, [categorySlug, appSlug, tableSlug]);
 
   useEffect(() => {
     if (ready) load();
@@ -55,7 +55,7 @@ export default function TableDetailPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">{table.name}</h1>
-          <p className="page-subtitle">{table.description || `Tabla de ${table.category_name}`}</p>
+          <p className="page-subtitle">{table.description || `Tabla de ${table.application_name ?? table.category_name}`}</p>
           <div className="row" style={{ marginTop: 10 }}>
             <Badge color="blue">{fmtNumber(table.row_count)} registros</Badge>
             <Badge color="gray">{table.columns.length} columnas</Badge>

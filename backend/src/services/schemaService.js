@@ -60,6 +60,26 @@ export function validateColumns(rawColumns) {
   return columns;
 }
 
+const SYSTEM_COLUMN_NAMES = ['_id', '_created_at', '_updated_at'];
+
+/**
+ * Conflictos de una columna nueva o editada con el resto de la tabla (others = las demás columnas).
+ * Devuelve { status, message } o null.
+ */
+export function columnConflict(others, column) {
+  if (others.some((c) => c.db_name === column.db_name) || SYSTEM_COLUMN_NAMES.includes(column.db_name)) {
+    return { status: 409, message: `La columna "${column.db_name}" ya existe` };
+  }
+  if (others.some((c) => normalizeHeader(c.excel_name) === normalizeHeader(column.excel_name))) {
+    return { status: 409, message: `El nombre en Excel "${column.excel_name}" ya está en uso` };
+  }
+  if (column.is_key && column.data_type === 'longtext') return { status: 400, message: 'Una columna clave no puede ser Texto largo' };
+  if (column.is_key && column.data_type === 'text' && others.filter((c) => c.is_key && c.data_type === 'text').length >= MAX_TEXT_KEYS) {
+    return { status: 400, message: `Máximo ${MAX_TEXT_KEYS} columnas clave de tipo Texto` };
+  }
+  return null;
+}
+
 export function columnSql(col) {
   return `${escapeId(col.db_name)} ${DATA_TYPES[col.data_type].sql} ${col.nullable ? 'NULL' : 'NOT NULL'}`;
 }
@@ -81,6 +101,8 @@ export function buildCreateTableSql(dbTable, columns) {
 /** Agrega la columna después de la última columna de usuario (antes de las de sistema). */
 export const addColumnSql = (dbTable, col, afterColumn) =>
   `ALTER TABLE ${escapeId(dbTable)} ADD COLUMN ${columnSql(col)} AFTER ${escapeId(afterColumn)}`;
+
+export const dropColumnSql = (dbTable, dbName) => `ALTER TABLE ${escapeId(dbTable)} DROP COLUMN ${escapeId(dbName)}`;
 
 export const dropTableSql = (dbTable) => `DROP TABLE IF EXISTS ${escapeId(dbTable)}`;
 export const truncateTableSql = (dbTable) => `TRUNCATE TABLE ${escapeId(dbTable)}`;

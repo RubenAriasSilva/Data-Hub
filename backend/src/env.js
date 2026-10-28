@@ -5,4 +5,11 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.env'), quiet: true, override: true });
+const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+dotenv.config({ path: path.join(dir, '.env'), quiet: true, override: true });
+// .env.local (opcional, no se versiona): sobrescribe valores para desarrollo, p. ej. otro PORT y DB_NAME
+// para probar en el mismo equipo donde corre producción sin tocarla. Producción (PM2, NODE_ENV=production)
+// lo ignora: suele correr desde la misma carpeta.
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config({ path: path.join(dir, '.env.local'), quiet: true, override: true });
+}

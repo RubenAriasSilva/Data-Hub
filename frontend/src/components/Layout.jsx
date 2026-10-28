@@ -56,8 +56,14 @@ function Topbar() {
   if (parts[0] === 'c' && parts[1]) {
     const cat = categories.find((c) => c.slug === parts[1]);
     crumbs.push({ to: `/c/${parts[1]}`, label: cat?.name ?? parts[1] });
-    if (parts[2] === 'new') crumbs.push({ label: 'Nueva tabla' });
-    if (parts[2] === 't' && parts[3]) crumbs.push({ label: parts[3] });
+    // Nivel opcional de aplicación: /c/<cat>/a/<app>/...
+    let rest = parts.slice(2);
+    if (rest[0] === 'a' && rest[1]) {
+      crumbs.push({ to: `/c/${parts[1]}/a/${rest[1]}`, label: rest[1] });
+      rest = rest.slice(2);
+    }
+    if (rest[0] === 'new') crumbs.push({ label: 'Nueva tabla' });
+    if (rest[0] === 't' && rest[1]) crumbs.push({ label: rest[1] });
   } else crumbs.push({ label: 'Dashboard' });
 
   return (

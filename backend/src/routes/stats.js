@@ -14,10 +14,12 @@ router.get('/', async (req, res) => {
   );
   const [recent] = await pool.query(
     `SELECT u.id, u.source, u.filename, u.rows_total, u.inserted, u.updated, u.failed, u.status, u.created_at,
-            t.id AS table_id, t.name AS table_name, t.slug AS table_slug, c.slug AS category_slug, c.name AS category_name
+            t.id AS table_id, t.name AS table_name, t.slug AS table_slug, c.slug AS category_slug, c.name AS category_name,
+            a.slug AS application_slug, a.name AS application_name
      FROM upload_logs u
      JOIN hub_tables t ON t.id = u.table_id
      JOIN categories c ON c.id = t.category_id
+     LEFT JOIN applications a ON a.id = t.application_id
      ORDER BY u.id DESC LIMIT 10`,
   );
   res.json({

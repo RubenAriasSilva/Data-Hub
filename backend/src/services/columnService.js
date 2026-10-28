@@ -1,9 +1,13 @@
-// Cambio de nombre en BD y/o tipo de una columna existente, conservando sus datos.
+// Operaciones sobre columnas de una tabla existente (agregar, editar conservando datos, eliminar).
+// Las usan tanto las rutas REST como el modo SQL.
 import mysql from 'mysql2/promise';
 import { getPool } from '../config/db.js';
 import { DATA_TYPES } from '../utils/types.js';
 import { HttpError } from '../utils/httpError.js';
-import { columnSql, isStringType, planColumnConversion } from './schemaService.js';
+import { isValidIdentifier } from '../utils/identifiers.js';
+import {
+  columnSql, isStringType, planColumnConversion, normalizeColumn, columnConflict, addColumnSql, dropColumnSql,
+} from './schemaService.js';
 
 const { escapeId } = mysql;
 const BATCH_SIZE = 500;
@@ -84,4 +88,71 @@ export async function alterColumn(meta, col, { dbName, dataType }) {
   } finally {
     conn.release();
   }
+}
+
+/** Valida una columna nueva (siempre opcional y no clave, porque la tabla puede tener datos). */
+export function validateNewColumn(columns, raw) {
+  // Tras eliminar columnas puede haber huecos en position: la nueva va después de la última
+  const position = Math.max(-1, ...columns.map((c) => c.position ?? 0)) + 1;
+  const { column, error } = normalizeColumn({ ...raw, is_key: false, nullable: true }, position);
+  if (error) throw new HttpError(400, error);
+  const conflict = columnConflict(columns, column);
+  if (conflict) throw new HttpError(conflict.status, conflict.message);
+  return column;
+}
+
+/** Valida la edición de una columna (nombre en Excel, nombre en BD y tipo). Devuelve la columna resultante. */
+export function validateColumnUpdate(columns, col, changes) {
+  const target = {
+    ...col,
+    excel_name: String(changes.excel_name ?? col.excel_name).trim(),
+    db_name: String(changes.db_name ?? col.db_name).trim(),
+    data_type: String(changes.data_type ?? col.data_type),
+  };
+  if (!target.excel_name || target.excel_name.length > 255) throw new HttpError(400, 'El nombre en Excel es obligatorio (máx. 255)');
+  if (!isValidIdentifier(target.db_name)) {
+    throw new HttpError(400, 'El nombre en BD debe iniciar con letra y contener solo minúsculas, números y _ (máx. 64)');
+  }
+  if (!DATA_TYPES[target.data_type]) throw new HttpError(400, `Tipo inválido: ${target.data_type}`);
+  const conflict = columnConflict(columns.filter((c) => c.id !== col.id), target);
+  if (conflict) throw new HttpError(conflict.status, conflict.message);
+  return target;
+}
+
+/** Valida que la columna se pueda eliminar. */
+export function validateColumnDrop(columns, col) {
+  if (col.is_key) throw new HttpError(400, `No se puede eliminar "${col.db_name}": es columna clave`);
+  if (columns.length <= 1) throw new HttpError(400, 'La tabla debe conservar al menos una columna');
+}
+
+export async function addColumn(meta, raw) {
+  const column = validateNewColumn(meta.columns, raw);
+  try {
+    await getPool().query(addColumnSql(meta.table.db_table, column, meta.columns.at(-1)?.db_name ?? '_id'));
+  } catch (err) {
+    throw new HttpError(400, `MySQL rechazó la columna: ${err.sqlMessage || err.message}`);
+  }
+  await getPool().query(
+    'INSERT INTO hub_columns (table_id, excel_name, db_name, data_type, is_key, nullable, position) VALUES (?, ?, ?, ?, 0, 1, ?)',
+    [meta.table.id, column.excel_name, column.db_name, column.data_type, column.position],
+  );
+}
+
+export async function updateColumn(meta, col, changes) {
+  const target = validateColumnUpdate(meta.columns, col, changes);
+  await alterColumn(meta, col, { dbName: target.db_name, dataType: target.data_type });
+  await getPool().query(
+    'UPDATE hub_columns SET excel_name = ?, db_name = ?, data_type = ? WHERE id = ?',
+    [target.excel_name, target.db_name, target.data_type, col.id],
+  );
+}
+
+export async function dropColumn(meta, col) {
+  validateColumnDrop(meta.columns, col);
+  try {
+    await getPool().query(dropColumnSql(meta.table.db_table, col.db_name));
+  } catch (err) {
+    throw new HttpError(400, `MySQL rechazó eliminar la columna: ${err.sqlMessage || err.message}`);
+  }
+  await getPool().query('DELETE FROM hub_columns WHERE id = ?', [col.id]);
 }

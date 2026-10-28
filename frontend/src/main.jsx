@@ -5,6 +5,7 @@ import { AppProvider } from './context/AppContext';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import CategoryPage from './pages/CategoryPage';
+import ApplicationPage from './pages/ApplicationPage';
 import CreateTablePage from './pages/CreateTablePage';
 import TableDetailPage from './pages/TableDetailPage';
 import './index.css';
@@ -19,6 +20,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <Route path="c/:categorySlug" element={<CategoryPage />} />
             <Route path="c/:categorySlug/new" element={<CreateTablePage />} />
             <Route path="c/:categorySlug/t/:tableSlug" element={<TableDetailPage />} />
+            <Route path="c/:categorySlug/a/:appSlug" element={<ApplicationPage />} />
+            <Route path="c/:categorySlug/a/:appSlug/new" element={<CreateTablePage />} />
+            <Route path="c/:categorySlug/a/:appSlug/t/:tableSlug" element={<TableDetailPage />} />
             <Route path="*" element={<p className="muted">Página no encontrada.</p>} />
           </Route>
         </Routes>

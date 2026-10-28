@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import multer from 'multer';
 import { connectWithRetry, dbState } from './config/db.js';
 import categoriesRouter from './routes/categories.js';
+import applicationsRouter from './routes/applications.js';
 import tablesRouter from './routes/tables.js';
 import externalRouter from './routes/external.js';
 import statsRouter from './routes/stats.js';
@@ -24,6 +25,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/categories', categoriesRouter);
+app.use('/api/applications', applicationsRouter);
 app.use('/api/tables', tablesRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/v1', externalRouter);

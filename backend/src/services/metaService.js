@@ -3,8 +3,10 @@ import { getPool } from '../config/db.js';
 import { HttpError } from '../utils/httpError.js';
 
 const TABLE_SELECT = `
-  SELECT t.*, c.slug AS category_slug, c.name AS category_name
-  FROM hub_tables t JOIN categories c ON c.id = t.category_id`;
+  SELECT t.*, c.slug AS category_slug, c.name AS category_name, a.slug AS application_slug, a.name AS application_name
+  FROM hub_tables t
+  JOIN categories c ON c.id = t.category_id
+  LEFT JOIN applications a ON a.id = t.application_id`;
 
 const normalizeColumn = (c) => ({ ...c, is_key: Boolean(c.is_key), nullable: Boolean(c.nullable) });
 
@@ -22,8 +24,12 @@ export async function getTableMetaById(id) {
   return withColumns(table);
 }
 
-export async function getTableMetaBySlug(categorySlug, tableSlug) {
-  const [[table]] = await getPool().query(`${TABLE_SELECT} WHERE c.slug = ? AND t.slug = ?`, [categorySlug, tableSlug]);
+/** appSlug null = tabla directa de la categoría (sin aplicación). */
+export async function getTableMetaBySlug(categorySlug, appSlug, tableSlug) {
+  const [[table]] = await getPool().query(
+    `${TABLE_SELECT} WHERE c.slug = ? AND t.slug = ? AND ${appSlug ? 'a.slug = ?' : 't.application_id IS NULL'}`,
+    appSlug ? [categorySlug, tableSlug, appSlug] : [categorySlug, tableSlug],
+  );
   return withColumns(table);
 }
 
@@ -36,16 +42,30 @@ export async function countRows(dbTable) {
   }
 }
 
-/** Tablas (opcionalmente de una categoría) con número de columnas, filas y última carga. */
-export async function listTablesWithStats(categoryId) {
+/**
+ * Tablas con número de columnas, filas y última carga.
+ * filter: { categoryId, applicationId } — applicationId null = solo las tablas directas de la categoría.
+ */
+export async function listTablesWithStats(filter = {}) {
+  const where = [];
+  const params = [];
+  if (filter.categoryId) {
+    where.push('t.category_id = ?');
+    params.push(filter.categoryId);
+  }
+  if (filter.applicationId === null) where.push('t.application_id IS NULL');
+  else if (filter.applicationId) {
+    where.push('t.application_id = ?');
+    params.push(filter.applicationId);
+  }
   const [tables] = await getPool().query(
     `${TABLE_SELECT.replace('SELECT t.*', `SELECT t.*,
        (SELECT COUNT(*) FROM hub_columns hc WHERE hc.table_id = t.id) AS column_count,
        (SELECT MAX(u.created_at) FROM upload_logs u WHERE u.table_id = t.id) AS last_upload_at,
        (SELECT u.status FROM upload_logs u WHERE u.table_id = t.id ORDER BY u.id DESC LIMIT 1) AS last_upload_status`)}
-     ${categoryId ? 'WHERE t.category_id = ?' : ''}
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
      ORDER BY t.name`,
-    categoryId ? [categoryId] : [],
+    params,
   );
   for (const t of tables) t.row_count = await countRows(t.db_table);
   return tables;

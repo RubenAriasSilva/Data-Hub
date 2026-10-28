@@ -4,8 +4,22 @@ import { useApp } from '../context/AppContext';
 import { slugify } from '../utils/format';
 import { Modal, Alert, Spinner, CATEGORY_ICONS } from './ui';
 
-/** Crear (category = null) o editar una categoría. */
-export default function CategoryFormModal({ open, category, onClose, onSaved }) {
+const KINDS = {
+  category: {
+    endpoint: '/categories', title: 'categoría', icons: true, placeholder: 'Ej. RPAs, Calidad, Producción',
+  },
+  application: {
+    endpoint: '/applications', title: 'aplicación', icons: false, placeholder: 'Ej. SAP, MES, Mantenimiento',
+  },
+};
+
+/**
+ * Crear (category = null) o editar una categoría o, con kind="application", una aplicación
+ * (al crear, categoryId indica la categoría a la que pertenece).
+ */
+export default function CategoryFormModal({ open, category, kind = 'category', categoryId, onClose, onSaved }) {
+  const cfg = KINDS[kind];
+  const label = cfg.title[0].toUpperCase() + cfg.title.slice(1);
   const { refreshCategories, toast } = useApp();
   const [form, setForm] = useState({ name: '', slug: '', description: '', icon: 'folder' });
   const [slugTouched, setSlugTouched] = useState(false);
@@ -33,10 +47,10 @@ export default function CategoryFormModal({ open, category, onClose, onSaved }) 
     setError(null);
     try {
       const saved = category
-        ? await api.put(`/categories/${category.id}`, form)
-        : await api.post('/categories', form);
+        ? await api.put(`${cfg.endpoint}/${category.id}`, form)
+        : await api.post(cfg.endpoint, { ...form, category_id: categoryId });
       await refreshCategories();
-      toast(category ? 'Categoría actualizada' : 'Categoría creada');
+      toast(`${label} ${category ? 'actualizada' : 'creada'}`);
       onSaved?.(saved);
       onClose();
     } catch (err) {
@@ -49,7 +63,7 @@ export default function CategoryFormModal({ open, category, onClose, onSaved }) 
   return (
     <Modal
       open={open}
-      title={category ? 'Editar categoría' : 'Nueva categoría'}
+      title={category ? `Editar ${cfg.title}` : `Nueva ${cfg.title}`}
       onClose={onClose}
       footer={(
         <>
@@ -64,7 +78,7 @@ export default function CategoryFormModal({ open, category, onClose, onSaved }) 
         {error && <div className="field"><Alert type="error">{error}</Alert></div>}
         <div className="field">
           <label className="form-label">Nombre</label>
-          <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Ej. RPAs, Calidad, Producción" autoFocus />
+          <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder={cfg.placeholder} autoFocus />
         </div>
         <div className="field">
           <label className="form-label">Identificador</label>
@@ -80,20 +94,22 @@ export default function CategoryFormModal({ open, category, onClose, onSaved }) 
           <label className="form-label">Descripción</label>
           <textarea rows={2} value={form.description} onChange={(e) => set('description', e.target.value)} />
         </div>
-        <div className="field">
-          <label className="form-label">Icono</label>
-          <div className="row">
-            {Object.entries(CATEGORY_ICONS).map(([key, Icon]) => (
-              <button
-                key={key} type="button" title={key}
-                className={form.icon === key ? 'btn-primary btn-icon' : 'btn-secondary btn-icon'}
-                onClick={() => set('icon', key)}
-              >
-                <Icon size={16} />
-              </button>
-            ))}
+        {cfg.icons && (
+          <div className="field">
+            <label className="form-label">Icono</label>
+            <div className="row">
+              {Object.entries(CATEGORY_ICONS).map(([key, Icon]) => (
+                <button
+                  key={key} type="button" title={key}
+                  className={form.icon === key ? 'btn-primary btn-icon' : 'btn-secondary btn-icon'}
+                  onClick={() => set('icon', key)}
+                >
+                  <Icon size={16} />
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </form>
     </Modal>
   );

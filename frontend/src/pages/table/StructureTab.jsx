@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Eraser, Key } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eraser, Key, FileCode2, Eye } from 'lucide-react';
 import { api } from '../../api/client';
 import { useApp } from '../../context/AppContext';
-import { Badge, Modal, Alert, Spinner } from '../../components/ui';
-import { DATA_TYPES, IDENT_RE, slugify, fmtNumber } from '../../utils/format';
+import { Badge, Modal, Alert, Spinner, CodeBlock } from '../../components/ui';
+import { DATA_TYPES, IDENT_RE, slugify, fmtNumber, parentPath } from '../../utils/format';
 
 export default function StructureTab({ table, onChanged }) {
   const navigate = useNavigate();
@@ -19,6 +19,10 @@ export default function StructureTab({ table, onChanged }) {
   const [confirmText, setConfirmText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [sqlOpen, setSqlOpen] = useState(false);
+  const [currentSql, setCurrentSql] = useState('');
+  const [alterText, setAlterText] = useState('');
+  const [preview, setPreview] = useState(null); // { plan, warnings } de la vista previa
 
   const run = async (fn, okMsg) => {
     setBusy(true);
@@ -80,12 +84,41 @@ export default function StructureTab({ table, onChanged }) {
       const ok = await run(() => api.del(`/tables/${table.id}`), 'Tabla eliminada');
       if (ok) {
         await refreshCategories();
-        navigate(`/c/${table.category_slug}`);
+        navigate(parentPath(table));
       }
     }
   };
 
   const openModal = (setter) => { setError(null); setConvErrors([]); setter(); };
+
+  // Modo SQL: ALTER TABLE validado por el backend; primero vista previa, luego aplicar
+  const openSql = () => openModal(async () => {
+    setPreview(null);
+    setAlterText(`ALTER TABLE ${table.slug}\n  ADD COLUMN nueva_columna VARCHAR(255) COMMENT 'Nueva columna';`);
+    setSqlOpen(true);
+    try {
+      setCurrentSql((await api.get(`/tables/${table.id}/sql`)).sql);
+    } catch (err) {
+      setCurrentSql(`-- ${err.message}`);
+    }
+  });
+
+  const previewSql = () => run(async () => {
+    setPreview(await api.post(`/tables/${table.id}/sql`, { sql: alterText, dryRun: true }));
+  });
+
+  const applySql = async () => {
+    let result = null;
+    const ok = await run(async () => {
+      result = await api.post(`/tables/${table.id}/sql`, { sql: alterText });
+    });
+    if (ok) {
+      toast(result.applied ? `${result.applied} cambio(s) aplicado(s)` : 'El SQL no generó cambios', result.applied ? 'success' : 'info');
+      setSqlOpen(false);
+    }
+    // Aunque falle un paso, los anteriores pueden haberse aplicado: se recarga igual
+    onChanged();
+  };
 
   return (
     <div className="stack">
@@ -118,6 +151,7 @@ export default function StructureTab({ table, onChanged }) {
         <div className="card-pad row" style={{ paddingBottom: 8 }}>
           <p className="section-title" style={{ margin: 0 }}>Columnas</p>
           <div className="spacer" />
+          <button type="button" className="btn-ghost btn-sm" onClick={openSql}><FileCode2 size={14} /> Editar con SQL</button>
           <button type="button" className="btn-secondary btn-sm" onClick={() => openModal(() => setAdding(true))}><Plus size={14} /> Agregar columna</button>
         </div>
         <div className="table-wrap">
@@ -248,6 +282,58 @@ export default function StructureTab({ table, onChanged }) {
               </div>
             )}
           </>
+        )}
+      </Modal>
+
+      <Modal
+        open={sqlOpen} title="Editar con SQL" width={760} onClose={() => setSqlOpen(false)}
+        footer={(
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setSqlOpen(false)}>Cancelar</button>
+            <button type="button" className="btn-secondary" onClick={previewSql} disabled={busy || !alterText.trim()}>
+              <Eye size={15} /> Vista previa
+            </button>
+            <button type="button" className="btn-primary" onClick={applySql} disabled={busy || !preview?.plan.length}>
+              {busy && <Spinner />} Aplicar
+            </button>
+          </>
+        )}
+      >
+        <p className="form-label">Estructura actual</p>
+        <div style={{ maxHeight: 180, overflow: 'auto', marginBottom: 14 }}><CodeBlock>{currentSql || '…'}</CodeBlock></div>
+        <label className="form-label">ALTER TABLE</label>
+        <textarea
+          className="mono" rows={7} spellCheck={false} value={alterText} style={{ width: '100%', resize: 'vertical' }}
+          onChange={(e) => { setAlterText(e.target.value); setPreview(null); }}
+        />
+        <div className="field-hint" style={{ marginBottom: 12 }}>
+          Admite <span className="code-inline">ADD COLUMN</span>, <span className="code-inline">MODIFY COLUMN</span>, <span className="code-inline">CHANGE COLUMN</span>,
+          {' '}<span className="code-inline">RENAME COLUMN … TO …</span> y <span className="code-inline">DROP COLUMN</span>, separadas por comas o en varias sentencias.
+          {' '}<span className="code-inline">COMMENT '…'</span> cambia el nombre en Excel. Al cambiar el tipo se convierten los datos. Usa “Vista previa” antes de aplicar.
+        </div>
+        {error && <div className="field"><Alert type="error">{error}</Alert></div>}
+        {preview && (
+          <div className="stack" style={{ gap: 8 }}>
+            {preview.plan.length > 0 && (
+              <Alert type="info">
+                <strong>Se aplicará:</strong>
+                <ol style={{ margin: '6px 0 0', paddingLeft: 20 }}>{preview.plan.map((p) => <li key={p}>{p}</li>)}</ol>
+              </Alert>
+            )}
+            {preview.warnings.map((w) => <Alert key={w} type="warning">{w}</Alert>)}
+          </div>
+        )}
+        {convErrors.length > 0 && (
+          <div className="table-wrap" style={{ marginTop: 12, maxHeight: 220 }}>
+            <table>
+              <thead><tr><th className="num">_id</th><th>Valor</th><th>Problema</th></tr></thead>
+              <tbody>
+                {convErrors.map((e) => (
+                  <tr key={e._id}><td className="num muted">{e._id}</td><td className="mono small">{String(e.value)}</td><td className="small">{e.message}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Modal>
 
