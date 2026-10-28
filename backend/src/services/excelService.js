@@ -188,7 +188,7 @@ const csvField = (v) => {
 
 /** CSV UTF-8 con BOM (para que Power BI y Excel respeten acentos). */
 export function buildCsv(headers, rows) {
-  return `﻿${[headers, ...rows].map((r) => r.map(csvField).join(',')).join('\r\n')}\r\n`;
+  return `\uFEFF${[headers, ...rows].map((r) => r.map(csvField).join(',')).join('\r\n')}\r\n`;
 }
 
 export function buildWorkbook(headers, rows, sheetName = 'Datos') {

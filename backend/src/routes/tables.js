@@ -7,10 +7,10 @@ import {
 import { addColumn, updateColumn, dropColumn } from '../services/columnService.js';
 import { parseCreateTable, planAlter, toCreateSql } from '../services/sqlService.js';
 import { detectColumns, buildWorkbook } from '../services/excelService.js';
-import { importExcel, resultHttpStatus } from '../services/importService.js';
+import { importFile, importJson, resultHttpStatus } from '../services/importService.js';
 import { queryRows, allRows, deleteById } from '../services/dataService.js';
 import { slugify, isValidIdentifier } from '../utils/identifiers.js';
-import { excelUpload, sendXlsx } from '../utils/upload.js';
+import { excelUpload, dataUpload, sendXlsx } from '../utils/upload.js';
 import { HttpError } from '../utils/httpError.js';
 
 const router = Router();
@@ -57,6 +57,8 @@ router.post('/', async (req, res) => {
   if (!isValidIdentifier(slug, maxSlug)) {
     throw new HttpError(400, `El identificador debe iniciar con letra y tener solo minúsculas, números y _ (máx. ${maxSlug})`);
   }
+  // POST /api/v1/<cat>/<tabla>/upload tiene la misma forma que POST /api/v1/<cat>/<app>/<tabla>
+  if (slug === 'upload') throw new HttpError(400, 'El identificador "upload" está reservado para la API');
   const columns = validateColumns(body.columns);
   const dbTable = `${prefix}${slug}`;
   const parentName = application ? `la aplicación ${application.name}` : `la categoría ${category.name}`;
@@ -188,9 +190,17 @@ router.delete('/:id/rows/:rowId', async (req, res) => {
   res.status(204).end();
 });
 
-router.post('/:id/upload', excelUpload, async (req, res) => {
+// Archivo Excel o .json
+router.post('/:id/upload', dataUpload, async (req, res) => {
   const meta = await getTableMetaById(req.params.id);
-  const result = await importExcel(meta, req.file);
+  const result = await importFile(meta, req.file);
+  res.status(resultHttpStatus(result)).json(result);
+});
+
+// JSON escrito en la app: [ {...} ] o { "rows": [ ... ] }
+router.post('/:id/json', async (req, res) => {
+  const meta = await getTableMetaById(req.params.id);
+  const result = await importJson(meta, req.body, { source: 'json' });
   res.status(resultHttpStatus(result)).json(result);
 });
 

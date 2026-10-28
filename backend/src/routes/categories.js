@@ -44,7 +44,7 @@ const tableDetail = async (meta) => ({ ...meta.table, columns: meta.columns, row
 router.get('/:slug', async (req, res) => {
   const category = await getCategory('slug', req.params.slug);
   const [applications] = await getPool().query(
-    `SELECT a.*, COUNT(t.id) AS table_count
+    `SELECT a.id, a.category_id, a.name, a.slug, a.description, a.created_at, COUNT(t.id) AS table_count
      FROM applications a LEFT JOIN hub_tables t ON t.application_id = a.id
      WHERE a.category_id = ? GROUP BY a.id ORDER BY a.name`,
     [category.id],

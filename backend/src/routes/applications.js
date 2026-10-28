@@ -3,9 +3,12 @@ import { Router } from 'express';
 import { getPool } from '../config/db.js';
 import { slugify, isValidIdentifier } from '../utils/identifiers.js';
 import { HttpError } from '../utils/httpError.js';
+import { fileUpload } from '../utils/upload.js';
 
 const router = Router();
 export const MAX_APP_SLUG = 20;
+const MAX_README_MB = 2;
+const readmeUpload = fileUpload(['.md', '.markdown', '.txt'], MAX_README_MB);
 
 async function getApplication(id) {
   const [[app]] = await getPool().query(
@@ -50,6 +53,26 @@ router.put('/:id', async (req, res) => {
   const data = readBody(req.body);
   await getPool().query('UPDATE applications SET name = ?, description = ? WHERE id = ?', [data.name, data.description, req.params.id]);
   res.json(await getApplication(req.params.id));
+});
+
+// Documentación: archivo .md (multipart, campo "file") o JSON { "content": "..." }
+router.put('/:id/readme', readmeUpload, async (req, res) => {
+  await getApplication(req.params.id);
+  const content = req.file
+    ? req.file.buffer.toString('utf8').replace(/^\uFEFF/, '')
+    : req.body?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new HttpError(400, 'Adjunta un archivo .md en el campo "file" o envía { "content": "..." }');
+  }
+  if (Buffer.byteLength(content) > MAX_README_MB * 1024 * 1024) throw new HttpError(413, `La documentación excede ${MAX_README_MB} MB`);
+  await getPool().query('UPDATE applications SET readme = ?, readme_updated_at = NOW() WHERE id = ?', [content, req.params.id]);
+  res.json(await getApplication(req.params.id));
+});
+
+router.delete('/:id/readme', async (req, res) => {
+  await getApplication(req.params.id);
+  await getPool().query('UPDATE applications SET readme = NULL, readme_updated_at = NULL WHERE id = ?', [req.params.id]);
+  res.status(204).end();
 });
 
 router.delete('/:id', async (req, res) => {

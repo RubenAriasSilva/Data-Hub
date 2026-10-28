@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { History } from 'lucide-react';
 import { api } from '../../api/client';
 import { Badge, Loading, EmptyState, Alert, Modal } from '../../components/ui';
-import { fmtNumber, fmtDateTime, STATUS } from '../../utils/format';
+import { fmtNumber, fmtDateTime, STATUS, SOURCES } from '../../utils/format';
 import UploadResult from './UploadResult';
 
 export default function HistoryTab({ table, version }) {
@@ -34,7 +34,7 @@ export default function HistoryTab({ table, version }) {
               {logs.map((l) => (
                 <tr key={l.id} className="clickable" onClick={() => setSelected(l)}>
                   <td className="nowrap">{fmtDateTime(l.created_at)}</td>
-                  <td><Badge color={l.source === 'api' ? 'blue' : 'gray'}>{l.source === 'api' ? 'API' : 'Excel'}</Badge></td>
+                  <td><Badge color={SOURCES[l.source]?.color ?? 'gray'}>{SOURCES[l.source]?.label ?? l.source}</Badge></td>
                   <td className="small">{l.filename ?? '—'}</td>
                   <td className="num">{fmtNumber(l.rows_total)}</td>
                   <td className="num" style={{ color: 'var(--success)' }}>{fmtNumber(l.inserted)}</td>

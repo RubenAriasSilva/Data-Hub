@@ -1,11 +1,11 @@
 // API pública por tabla en /api/v1/:categoria/:tabla o /api/v1/:categoria/:aplicacion/:tabla
-// Salida: CSV (Power BI) o JSON (apps/RPAs). Entrada: Excel.
+// Salida: CSV (Power BI) o JSON (apps/RPAs). Entrada: archivo Excel/.json o cuerpo JSON.
 import { Router } from 'express';
 import { getTableMetaBySlug } from '../services/metaService.js';
-import { importExcel, resultHttpStatus } from '../services/importService.js';
+import { importFile, importJson, resultHttpStatus } from '../services/importService.js';
 import { queryRows, allRows } from '../services/dataService.js';
 import { buildCsv } from '../services/excelService.js';
-import { excelUpload } from '../utils/upload.js';
+import { dataUpload } from '../utils/upload.js';
 
 const router = Router();
 const RESERVED_QUERY = new Set(['page', 'limit', 'sort', 'order', 'q', 'updated_since', 'format']);
@@ -37,17 +37,26 @@ async function readTable(req, res) {
   ));
 }
 
-// Entrada: upsert desde Excel (multipart, campo "file")
-async function uploadExcel(req, res) {
+// Entrada: upsert desde un archivo Excel o .json (multipart, campo "file")
+async function uploadFile(req, res) {
   const meta = await resolve(req);
-  const result = await importExcel(meta, req.file);
+  const result = await importFile(meta, req.file);
+  res.status(resultHttpStatus(result)).json(result);
+}
+
+// Entrada: upsert desde el cuerpo JSON: [ {...} ] o { "rows": [ ... ] }
+async function writeJson(req, res) {
+  const meta = await resolve(req);
+  const result = await importJson(meta, req.body);
   res.status(resultHttpStatus(result)).json(result);
 }
 
 // Tablas directas de la categoría y tablas dentro de una aplicación
 router.get('/:category/:table', readTable);
 router.get('/:category/:app/:table', readTable);
-router.post('/:category/:table/upload', excelUpload, uploadExcel);
-router.post('/:category/:app/:table/upload', excelUpload, uploadExcel);
+router.post('/:category/:table/upload', dataUpload, uploadFile);
+router.post('/:category/:app/:table/upload', dataUpload, uploadFile);
+router.post('/:category/:table', writeJson);
+router.post('/:category/:app/:table', writeJson);
 
 export default router;

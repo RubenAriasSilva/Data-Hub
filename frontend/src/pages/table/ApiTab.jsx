@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Badge, CodeBlock, Alert } from '../../components/ui';
 import { publicApiBase } from '../../api/client';
-import { apiPath } from '../../utils/format';
+import { apiPath, sampleValue } from '../../utils/format';
 
 const METHOD_COLORS = { GET: 'blue', POST: 'green' };
 
@@ -35,6 +35,28 @@ with open("archivo.xlsx", "rb") as f:
     r = requests.post("${url}/upload", files={"file": f})
 print(r.json())  # {"status": "success", "inserted": 1, "updated": 0, ...}`,
   };
+  // Cuerpo de ejemplo con los nombres en BD (no cambian si se renombra el encabezado del Excel)
+  const sampleRow = Object.fromEntries(table.columns.map((c) => [c.db_name, sampleValue(c.data_type)]));
+  const jsonBody = JSON.stringify({ rows: [sampleRow] }, null, 2);
+  const jsonExamples = {
+    Linux: `curl -X POST "${url}" \\
+  -H "Content-Type: application/json" \\
+  -d @datos.json`,
+    // Con el cuerpo en un archivo se evitan los problemas de comillas de cmd/PowerShell
+    Windows: `curl.exe -X POST "${url}" -H "Content-Type: application/json" -d "@C:/ruta/datos.json"`,
+    Python: `import requests
+
+filas = ${JSON.stringify([sampleRow])}
+r = requests.post("${url}", json={"rows": filas})
+print(r.json())`,
+  };
+  const osTabs = (
+    <div className="tabs" style={{ marginBottom: 10 }}>
+      {Object.keys(uploadExamples).map((os) => (
+        <button key={os} type="button" className={`tab${uploadOs === os ? ' active' : ''}`} onClick={() => setUploadOs(os)}>{os}</button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="stack">
@@ -44,15 +66,19 @@ print(r.json())  # {"status": "success", "inserted": 1, "updated": 0, ...}`,
       </Alert>
 
       <div className="grid grid-2" style={{ marginTop: 24, alignItems: 'start' }}>
-        <Endpoint method="POST" url={`${url}/upload`} title="Entrada — Subir Excel">
-          <>Mismo proceso que la pestaña “Cargar Excel”: inserta filas nuevas y actualiza las existentes según la clave. Campo multipart <span className="code-inline">file</span> (.xlsx / .xls).</>
-          <div className="tabs" style={{ marginBottom: 10 }}>
-            {Object.keys(uploadExamples).map((os) => (
-              <button key={os} type="button" className={`tab${uploadOs === os ? ' active' : ''}`} onClick={() => setUploadOs(os)}>{os}</button>
-            ))}
-          </div>
-          <CodeBlock>{uploadExamples[uploadOs]}</CodeBlock>
-        </Endpoint>
+        <div className="stack">
+          <Endpoint method="POST" url={`${url}/upload`} title="Entrada — Subir archivo (Excel o JSON)">
+            <>Mismo proceso que la pestaña “Cargar datos”: inserta filas nuevas y actualiza las existentes según la clave. Campo multipart <span className="code-inline">file</span> (.xlsx / .xls / .json).</>
+            {osTabs}
+            <CodeBlock>{uploadExamples[uploadOs]}</CodeBlock>
+          </Endpoint>
+          <Endpoint method="POST" url={url} title="Entrada — JSON">
+            <>Envía las filas en el cuerpo: un arreglo <span className="code-inline">[ {'{…}'} ]</span> o <span className="code-inline">{'{ "rows": [ … ] }'}</span>. Cada campo puede usar el nombre en BD o en Excel; los que no existen se ignoran.</>
+            <CodeBlock>{jsonBody}</CodeBlock>
+            <div style={{ marginTop: 10 }}>{osTabs}</div>
+            <CodeBlock>{jsonExamples[uploadOs]}</CodeBlock>
+          </Endpoint>
+        </div>
         <div className="stack">
           <Endpoint method="GET" url={`${url}?format=json`} title="Salida — JSON (apps / RPAs)">
             <>Filas en JSON, paginadas y filtrables. También responde JSON si la petición envía <span className="code-inline">Accept: application/json</span>.</>

@@ -13,7 +13,7 @@ import HistoryTab from './table/HistoryTab';
 
 const TABS = [
   { id: 'data', label: 'Datos', icon: Rows3 },
-  { id: 'upload', label: 'Cargar Excel', icon: UploadCloud },
+  { id: 'upload', label: 'Cargar datos', icon: UploadCloud },
   { id: 'structure', label: 'Estructura', icon: Columns3 },
   { id: 'api', label: 'API', icon: PlugZap },
   { id: 'history', label: 'Historial', icon: History },
@@ -64,7 +64,7 @@ export default function TableDetailPage() {
         </div>
         <div className="row">
           <a className="btn-secondary" href={`/api/tables/${table.id}/export`}><Download size={16} /> Exportar Excel</a>
-          <button type="button" className="btn-primary" onClick={() => setParams({ tab: 'upload' })}><UploadCloud size={16} /> Cargar Excel</button>
+          <button type="button" className="btn-primary" onClick={() => setParams({ tab: 'upload' })}><UploadCloud size={16} /> Cargar datos</button>
         </div>
       </div>
 

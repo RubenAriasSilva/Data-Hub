@@ -60,8 +60,11 @@ export async function importExcel(meta, file, source = 'excel') {
   return finalize(meta, { source, filename: file.originalname, startedAt, ...mapped });
 }
 
-/** Acepta [ {...} ] o { rows: [ {...} ] } con llaves por db_name o excel_name. */
-export async function importJson(meta, body) {
+/**
+ * Acepta [ {...} ] o { rows: [ {...} ] } con llaves por db_name o excel_name.
+ * source/filename se registran en el historial (api = cuerpo HTTP, json = archivo o texto desde la app).
+ */
+export async function importJson(meta, body, { source = 'api', filename = null } = {}) {
   const input = Array.isArray(body) ? body : Array.isArray(body?.rows) ? body.rows : null;
   if (!input) throw new HttpError(400, 'El cuerpo debe ser un arreglo de objetos o { "rows": [ ... ] }');
   if (input.length > MAX_JSON_ROWS) throw new HttpError(413, `Máximo ${MAX_JSON_ROWS} filas por solicitud`);
@@ -108,7 +111,20 @@ export async function importJson(meta, body) {
   });
 
   const warnings = unknown.size ? [`Campos ignorados (no definidos en la tabla): ${[...unknown].join(', ')}`] : [];
-  return finalize(meta, { source: 'api', filename: null, records, errors, warnings, totalRows: input.length, startedAt });
+  return finalize(meta, { source, filename, records, errors, warnings, totalRows: input.length, startedAt });
+}
+
+/** Carga un archivo subido: .json se interpreta como JSON; cualquier otro, como Excel. */
+export async function importFile(meta, file) {
+  if (!file) throw new HttpError(400, 'Adjunta un archivo Excel (.xlsx o .xls) o JSON (.json) en el campo "file"');
+  if (!file.originalname.toLowerCase().endsWith('.json')) return importExcel(meta, file);
+  let body;
+  try {
+    body = JSON.parse(file.buffer.toString('utf8').replace(/^\uFEFF/, ''));
+  } catch (err) {
+    throw new HttpError(400, `JSON inválido en ${file.originalname}: ${err.message}`);
+  }
+  return importJson(meta, body, { source: 'json', filename: file.originalname });
 }
 
 export const resultHttpStatus = (result) => (result.status === 'error' ? 422 : 200);

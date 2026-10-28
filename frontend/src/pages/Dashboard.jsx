@@ -4,7 +4,7 @@ import { FolderTree, Table2, Rows3, UploadCloud, History } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { Badge, Loading, EmptyState } from '../components/ui';
-import { fmtNumber, fmtDateTime, STATUS, tablePath } from '../utils/format';
+import { fmtNumber, fmtDateTime, STATUS, SOURCES, tablePath } from '../utils/format';
 
 function Metric({ icon: Icon, label, value, sub }) {
   return (
@@ -64,7 +64,7 @@ export default function Dashboard() {
                             <div style={{ fontWeight: 600 }}>{u.table_name}</div>
                             <div className="muted small">{u.category_name}{u.application_name ? ` · ${u.application_name}` : ''}</div>
                           </td>
-                          <td><Badge color={u.source === 'api' ? 'blue' : 'gray'}>{u.source === 'api' ? 'API' : 'Excel'}</Badge></td>
+                          <td><Badge color={SOURCES[u.source]?.color ?? 'gray'}>{SOURCES[u.source]?.label ?? u.source}</Badge></td>
                           <td className="num">{fmtNumber(u.rows_total)}</td>
                           <td><Badge color={STATUS[u.status]?.color}>{STATUS[u.status]?.label ?? u.status}</Badge></td>
                           <td className="nowrap muted small">{fmtDateTime(u.created_at)}</td>

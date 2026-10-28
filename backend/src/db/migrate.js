@@ -90,6 +90,11 @@ const ALTERS = [
     missing: { index: ['hub_tables', 'uk_category_slug'] },
     sql: 'ALTER TABLE hub_tables DROP INDEX uk_category_slug',
   },
+  // Documentación (README en Markdown) de cada aplicación
+  {
+    exists: { column: ['applications', 'readme'] },
+    sql: 'ALTER TABLE applications ADD COLUMN readme LONGTEXT NULL, ADD COLUMN readme_updated_at TIMESTAMP NULL',
+  },
 ];
 
 const CHECKS = {

@@ -54,6 +54,13 @@ export function fmtRelative(value) {
   return fmtDateTime(value);
 }
 
+// Origen de una carga (upload_logs.source)
+export const SOURCES = {
+  excel: { label: 'Excel', color: 'gray' },
+  json: { label: 'JSON', color: 'blue' },
+  api: { label: 'API', color: 'blue' },
+};
+
 export const STATUS = {
   success: { label: 'Completado', color: 'green' },
   partial: { label: 'Parcial', color: 'orange' },

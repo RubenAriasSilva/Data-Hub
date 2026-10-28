@@ -6,6 +6,7 @@ import { convertValue, parseNumber, ConversionError } from '../src/utils/types.j
 import { parseSheet, mapRows, detectColumns } from '../src/services/excelService.js';
 import { validateColumns, buildCreateTableSql, planColumnConversion } from '../src/services/schemaService.js';
 import { parseCreateTable, parseAlterTable, planAlter, toCreateSql } from '../src/services/sqlService.js';
+import { importFile } from '../src/services/importService.js';
 
 test('slugify convierte nombres de Excel a identificadores válidos', () => {
   assert.equal(slugify('Número de Orden'), 'numero_de_orden');
@@ -191,4 +192,13 @@ test('toCreateSql genera SQL que el propio intérprete entiende', () => {
   assert.deepEqual(back.columns, columns.map(({ excel_name, db_name, data_type, is_key, nullable }) => ({
     excel_name, db_name, data_type, is_key, nullable,
   })));
+});
+
+test('importFile valida archivos .json antes de tocar la base', async () => {
+  const meta = { table: { id: 1, sheet_name: null }, columns: [] };
+  await assert.rejects(importFile(meta, null), /\.json/);
+  const bad = { originalname: 'datos.JSON', buffer: Buffer.from('{ "rows": [ { "a": 1 }, ] }') };
+  await assert.rejects(importFile(meta, bad), /JSON inválido en datos\.JSON/);
+  const notRows = { originalname: 'datos.json', buffer: Buffer.from('\uFEFF{ "x": 1 }') }; // con BOM
+  await assert.rejects(importFile(meta, notRows), /arreglo de objetos/);
 });
