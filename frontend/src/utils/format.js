@@ -57,6 +57,7 @@ export function fmtRelative(value) {
 // Origen de una carga (upload_logs.source)
 export const SOURCES = {
   excel: { label: 'Excel', color: 'gray' },
+  csv: { label: 'CSV', color: 'gray' },
   json: { label: 'JSON', color: 'blue' },
   api: { label: 'API', color: 'blue' },
 };

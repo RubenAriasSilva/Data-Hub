@@ -1,15 +1,52 @@
 import * as XLSX from 'xlsx';
-import { convertValue, ConversionError } from '../utils/types.js';
+import { convertValue, ConversionError, parseNumber, parseDateParts } from '../utils/types.js';
 import { normalizeHeader, slugify } from '../utils/identifiers.js';
 import { HttpError } from '../utils/httpError.js';
 
 const DETECT_SAMPLE = 500;
+const CSV_SEPARATORS = [';', ',', '\t', '|'];
+
+export const isCsv = (filename) => /\.csv$/i.test(filename ?? '');
 
 function readWorkbook(buffer) {
   try {
     return XLSX.read(buffer, { type: 'buffer', cellNF: true, cellDates: false });
   } catch (err) {
     throw new HttpError(400, `No se pudo leer el archivo Excel: ${err.message}`);
+  }
+}
+
+/** UTF-8 si es válido; si no, windows-1252 (lo que exporta Excel en Windows). */
+function decodeText(buffer) {
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    text = new TextDecoder('windows-1252').decode(buffer);
+  }
+  return text.replace(/^﻿/, '');
+}
+
+/** Separador más frecuente (fuera de comillas) en la primera línea no vacía; "," si no hay ninguno. */
+function detectSeparator(text) {
+  const line = text.split(/\r?\n/).find((l) => l.trim() !== '') ?? '';
+  const counts = new Map(CSV_SEPARATORS.map((s) => [s, 0]));
+  let quoted = false;
+  for (const ch of line) {
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && counts.has(ch)) counts.set(ch, counts.get(ch) + 1);
+  }
+  const [sep, n] = [...counts].reduce((best, cur) => (cur[1] > best[1] ? cur : best));
+  return n > 0 ? sep : ',';
+}
+
+/** CSV como libro de una hoja; raw deja todo como texto (conserva ceros a la izquierda). */
+function readCsv(buffer) {
+  try {
+    const text = decodeText(buffer);
+    return XLSX.read(text, { type: 'string', FS: detectSeparator(text), raw: true });
+  } catch (err) {
+    throw new HttpError(400, `No se pudo leer el archivo CSV: ${err.message}`);
   }
 }
 
@@ -30,12 +67,16 @@ function readCell(cell) {
   return { t: cell.t, v: cell.v, w: cell.w ?? String(cell.v), isDate };
 }
 
-/** Lee una hoja: encabezados (primera fila no vacía) y filas con su número real en Excel. */
-export function parseSheet(buffer, sheetName) {
-  const wb = readWorkbook(buffer);
-  const name = pickSheet(wb, sheetName);
+/**
+ * Lee una hoja: encabezados (primera fila no vacía) y filas con su número real en el archivo.
+ * Con un .csv se ignora sheetName (solo tiene una hoja).
+ */
+export function parseSheet(buffer, sheetName, filename) {
+  const csv = isCsv(filename);
+  const wb = csv ? readCsv(buffer) : readWorkbook(buffer);
+  const name = csv ? wb.SheetNames[0] : pickSheet(wb, sheetName);
   const ws = wb.Sheets[name];
-  if (!ws['!ref']) throw new HttpError(400, `La hoja "${name}" está vacía`);
+  if (!ws?.['!ref']) throw new HttpError(400, csv ? 'El archivo CSV está vacío' : `La hoja "${name}" está vacía`);
   const range = XLSX.utils.decode_range(ws['!ref']);
 
   let headers = null;
@@ -52,8 +93,9 @@ export function parseSheet(buffer, sheetName) {
     if (!headers) headers = cells.map((cell) => (cell ? String(cell.isDate ? cell.w : cell.v).trim() : ''));
     else rows.push({ rowNumber: r + 1, cells });
   }
-  if (!headers) throw new HttpError(400, `La hoja "${name}" está vacía`);
-  return { sheet: name, sheets: wb.SheetNames, headers, rows };
+  if (!headers) throw new HttpError(400, csv ? 'El archivo CSV está vacío' : `La hoja "${name}" está vacía`);
+  if (csv) return { sheet: null, sheets: [], csv, headers, rows };
+  return { sheet: name, sheets: wb.SheetNames, csv, headers, rows };
 }
 
 /** Valor de entrada para convertValue según el tipo destino. */
@@ -90,16 +132,16 @@ export function mapRows(parsed, columns) {
   if (missingRequired.length) {
     throw new HttpError(
       400,
-      `Faltan columnas ${missingRequired.some((c) => c.is_key) ? 'clave/obligatorias' : 'obligatorias'} en el Excel: ${missingRequired.map((c) => `"${c.excel_name}"`).join(', ')}`,
+      `Faltan columnas ${missingRequired.some((c) => c.is_key) ? 'clave/obligatorias' : 'obligatorias'} en el archivo:${missingRequired.map((c) => `"${c.excel_name}"`).join(', ')}`,
       { missing: missingRequired.map((c) => c.excel_name), headers: parsed.headers.filter(Boolean) },
     );
   }
 
   const mappedIdx = new Set(mapping.map((m) => m.idx));
   const warnings = [];
-  if (missing.length) warnings.push(`Columnas no encontradas en el Excel (se conservan sus valores actuales): ${missing.map((c) => c.excel_name).join(', ')}`);
+  if (missing.length) warnings.push(`Columnas no encontradas en el archivo (se conservan sus valores actuales): ${missing.map((c) => c.excel_name).join(', ')}`);
   const unknown = parsed.headers.filter((h, i) => h && !mappedIdx.has(i));
-  if (unknown.length) warnings.push(`Encabezados del Excel ignorados (no definidos en la tabla): ${unknown.join(', ')}`);
+  if (unknown.length) warnings.push(`Encabezados del archivo ignorados (no definidos en la tabla): ${unknown.join(', ')}`);
 
   const records = [];
   const errors = [];
@@ -138,9 +180,28 @@ function detectType(cells) {
   return values.some((c) => String(c.w ?? c.v).length > 255) ? 'longtext' : 'text';
 }
 
-/** Propone columnas a partir de un Excel de ejemplo. */
-export function detectColumns(buffer, sheetName) {
-  const parsed = parseSheet(buffer, sheetName);
+const INT_TEXT = /^[-+]?(0|[1-9]\d*)$/; // sin ceros a la izquierda (códigos como 00123 quedan en texto)
+const DATE_TEXT = /^(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4})/;
+const TIME_TEXT = /\d{1,2}:\d{2}/;
+const BOOL_TEXT = new Set(['true', 'false', 'si', 'sí', 'no', 'yes', 'verdadero', 'falso']);
+
+/** Tipo a partir del texto (CSV: todas las celdas llegan como texto). */
+function detectTextType(cells) {
+  const values = cells.filter(Boolean).map((c) => String(c.v).trim());
+  if (!values.length) return 'text';
+  if (values.every((v) => INT_TEXT.test(v) && Number.isSafeInteger(Number(v)))) return 'int';
+  if (values.every((v) => !/^[-+]?0\d/.test(v) && !Number.isNaN(parseNumber(v)))) return 'decimal';
+  if (values.every((v) => DATE_TEXT.test(v) && parseDateParts(v))) {
+    return values.some((v) => TIME_TEXT.test(v)) ? 'datetime' : 'date';
+  }
+  if (values.every((v) => BOOL_TEXT.has(v.toLowerCase()))) return 'boolean';
+  return values.some((v) => v.length > 255) ? 'longtext' : 'text';
+}
+
+/** Propone columnas a partir de un Excel o CSV de ejemplo. */
+export function detectColumns(buffer, sheetName, filename) {
+  const parsed = parseSheet(buffer, sheetName, filename);
+  const typeOf = parsed.csv ? detectTextType : detectType;
   const sample = parsed.rows.slice(0, DETECT_SAMPLE);
   const usedDb = new Set();
   const columns = [];
@@ -155,7 +216,7 @@ export function detectColumns(buffer, sheetName) {
     columns.push({
       excel_name: header,
       db_name: dbName,
-      data_type: detectType(cells),
+      data_type: typeOf(cells),
       is_key: false,
       nullable: true,
       _unique: cells.every(Boolean) && new Set(cells.map((c) => String(c.v))).size === cells.length,

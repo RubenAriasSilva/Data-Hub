@@ -67,8 +67,8 @@ print(r.json())`,
 
       <div className="grid grid-2" style={{ marginTop: 24, alignItems: 'start' }}>
         <div className="stack">
-          <Endpoint method="POST" url={`${url}/upload`} title="Entrada — Subir archivo (Excel o JSON)">
-            <>Mismo proceso que la pestaña “Cargar datos”: inserta filas nuevas y actualiza las existentes según la clave. Campo multipart <span className="code-inline">file</span> (.xlsx / .xls / .json).</>
+          <Endpoint method="POST" url={`${url}/upload`} title="Entrada — Subir archivo (Excel, CSV o JSON)">
+            <>Mismo proceso que la pestaña “Cargar datos”: inserta filas nuevas y actualiza las existentes según la clave. Campo multipart <span className="code-inline">file</span> (.xlsx / .xls / .csv / .json). En CSV el separador (<span className="code-inline">,</span> o <span className="code-inline">;</span>) se detecta solo.</>
             {osTabs}
             <CodeBlock>{uploadExamples[uploadOs]}</CodeBlock>
           </Endpoint>

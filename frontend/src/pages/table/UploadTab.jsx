@@ -73,7 +73,7 @@ export default function UploadTab({ table, onUploaded }) {
         <div className="glass card-pad">
           <div className="row" style={{ marginBottom: 14 }}>
             <div className="tabs" style={{ margin: 0 }}>
-              {tab(format === 'excel', () => { setFormat('excel'); reset(); }, FileSpreadsheet, 'Excel')}
+              {tab(format === 'excel', () => { setFormat('excel'); reset(); }, FileSpreadsheet, 'Excel / CSV')}
               {tab(format === 'json', () => { setFormat('json'); reset(); }, Braces, 'JSON')}
             </div>
             {format === 'json' && (
@@ -98,7 +98,7 @@ export default function UploadTab({ table, onUploaded }) {
           <div className="row" style={{ marginTop: 14 }}>
             <span className="muted small">
               {format === 'excel'
-                ? <>Hoja: <strong>{table.sheet_name || 'primera hoja'}</strong> · </>
+                ? <>Hoja: <strong>{table.sheet_name || 'primera hoja'}</strong> (en CSV se ignora) · </>
                 : <>Un arreglo <span className="code-inline">[ {'{…}'} ]</span> o <span className="code-inline">{'{ "rows": [ … ] }'}</span> · </>}
               Las filas con la misma clave se actualizan; las nuevas se insertan.
             </span>
@@ -139,7 +139,7 @@ export default function UploadTab({ table, onUploaded }) {
         <div className="divider" />
         <div className="muted small">
           {format === 'excel'
-            ? <>Los encabezados se comparan sin distinguir mayúsculas, acentos ni espacios extra. Fechas aceptadas: celdas de fecha de Excel, <span className="code-inline">AAAA-MM-DD</span> o <span className="code-inline">DD/MM/AAAA</span>.</>
+            ? <>Los encabezados se comparan sin distinguir mayúsculas, acentos ni espacios extra. Fechas aceptadas: celdas de fecha de Excel, <span className="code-inline">AAAA-MM-DD</span> o <span className="code-inline">DD/MM/AAAA</span>. En CSV el separador (<span className="code-inline">,</span> o <span className="code-inline">;</span>) y la codificación (UTF-8 o ANSI) se detectan solos.</>
             : <>Cada campo puede usar el nombre en Excel o el nombre en BD. Los campos que no existen en la tabla se ignoran y se avisa. Fechas como <span className="code-inline">AAAA-MM-DD</span> o <span className="code-inline">DD/MM/AAAA</span>.</>}
         </div>
       </div>

@@ -1,6 +1,6 @@
 # Data Hub
 
-Administración de información por **categorías** (la primera es **RPAs**). Cada categoría contiene tablas MySQL que se crean desde el frontend, se alimentan con archivos Excel (`.xlsx` / `.xls`) o por HTTP, y se consultan desde otras aplicaciones.
+Administración de información por **categorías** (la primera es **RPAs**). Cada categoría contiene tablas MySQL que se crean desde el frontend, se alimentan con archivos Excel (`.xlsx` / `.xls`), CSV (`.csv`) o por HTTP, y se consultan desde otras aplicaciones.
 
 Stack: **Express 5 + React 18 (Vite) + Node.js + MySQL 8**.
 
@@ -103,9 +103,9 @@ Producción: `npm run build` y luego `npm start`. El backend sirve el frontend c
 ## Cómo funciona
 
 0. **Organización**: cada categoría puede tener tablas directas (p. ej. *RPAs → iw39*) y/o **aplicaciones** que agrupan tablas (*Categoría → Aplicación → Tablas*). Las aplicaciones se crean desde la página de la categoría (*Nueva aplicación*). Cada aplicación tiene una pestaña **Documentación** donde se sube un README en Markdown (`.md`, máx. 2 MB) que se muestra con formato estilo GitHub (tablas, listas de tareas, código). No se interpreta HTML incrustado, y las imágenes con rutas relativas no se ven (usa URLs completas).
-1. **Crear tabla** (Categoría o Aplicación → *Nueva tabla*): para cada columna se define el *nombre en Excel* (puede tener espacios, acentos, símbolos), el *nombre en BD* (se sugiere automáticamente, p. ej. `Número de Orden` → `numero_de_orden`), el *tipo* y si es *clave*. Con *Detectar desde Excel* se proponen las columnas a partir de un archivo de ejemplo. En la pestaña **SQL** se puede escribir un `CREATE TABLE` (ver *Modo SQL*).
+1. **Crear tabla** (Categoría o Aplicación → *Nueva tabla*): para cada columna se define el *nombre en Excel* (puede tener espacios, acentos, símbolos), el *nombre en BD* (se sugiere automáticamente, p. ej. `Número de Orden` → `numero_de_orden`), el *tipo* y si es *clave*. Con *Detectar desde Excel* se proponen las columnas a partir de un archivo de ejemplo (Excel o CSV). En la pestaña **SQL** se puede escribir un `CREATE TABLE` (ver *Modo SQL*).
 2. La tabla física se llama `dh_<categoria>_<tabla>` (o `dh_<categoria>_<aplicacion>_<tabla>`, máx. 64 caracteres) e incluye `_id`, `_created_at` y `_updated_at`. Las columnas clave forman un índice `UNIQUE`.
-3. **Cargar datos** (Excel o JSON): en Excel, los encabezados se comparan sin distinguir mayúsculas, acentos ni espacios extra. Se hace **upsert**: si la clave ya existe, la fila se actualiza; si no, se inserta. Las filas con valores inválidos se rechazan individualmente y se reportan (fila, columna, motivo). Cada carga queda en el **Historial** con su origen (Excel, JSON o API). En JSON se sube un archivo `.json` o se escribe en la app: un arreglo `[ {...} ]` o `{ "rows": [ ... ] }`, con cada campo por su nombre en BD o en Excel.
+3. **Cargar datos** (Excel, CSV o JSON): en Excel y CSV, los encabezados se comparan sin distinguir mayúsculas, acentos ni espacios extra. Se hace **upsert**: si la clave ya existe, la fila se actualiza; si no, se inserta. Las filas con valores inválidos se rechazan individualmente y se reportan (fila, columna, motivo). Cada carga queda en el **Historial** con su origen (Excel, JSON o API). En JSON se sube un archivo `.json` o se escribe en la app: un arreglo `[ {...} ]` o `{ "rows": [ ... ] }`, con cada campo por su nombre en BD o en Excel.
 4. **Editar columnas** (pestaña *Estructura*): se puede cambiar el nombre en Excel, el nombre en BD y el tipo. Al cambiar el tipo, los datos existentes se convierten; si algún valor no es compatible, se listan los problemas y la tabla no se modifica. También se puede hacer con *Editar con SQL*.
 
 Tipos: Texto (`VARCHAR(255)`), Texto largo (`TEXT`), Entero (`BIGINT`), Decimal (`DECIMAL(18,4)`), Fecha (`DATE`), Fecha y hora (`DATETIME`), Booleano (`TINYINT(1)`). Las fechas en texto se aceptan como `AAAA-MM-DD` o `DD/MM/AAAA`.
@@ -132,7 +132,7 @@ Sin autenticación (pensada para red interna). Base: `http://<servidor>:4000/api
 |---|---|---|
 | GET | `/api/v1/:categoria/:tabla` | **Salida (Power BI)**: CSV con todas las filas y los encabezados originales del Excel |
 | GET | `/api/v1/:categoria/:tabla?format=json` | **Salida (apps/RPAs)**: JSON paginado (`page`, `limit` ≤ 5000, `sort`, `order`, `q`, `updated_since`, `?<columna>=valor`). También con `Accept: application/json` |
-| POST | `/api/v1/:categoria/:tabla/upload` | **Entrada**: upsert desde un archivo Excel o `.json` (multipart, campo `file`) |
+| POST | `/api/v1/:categoria/:tabla/upload` | **Entrada**: upsert desde un archivo Excel, `.csv` o `.json` (multipart, campo `file`) |
 | POST | `/api/v1/:categoria/:tabla` | **Entrada**: upsert desde el cuerpo JSON: `[ {...} ]` o `{ "rows": [ ... ] }` (máx. 50 000 filas) |
 
 Power BI: *Obtener datos → Web*, pegar la URL del GET y *Cargar*.

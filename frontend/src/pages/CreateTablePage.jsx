@@ -115,10 +115,11 @@ export default function CreateTablePage() {
       const res = await api.post('/tables/detect', fd);
       setColumns(res.columns.map((c) => newColumn({ ...c, dbTouched: true })));
       if (!info.name) {
-        const base = detectFile.name.replace(/\.(xlsx|xls)$/i, '');
+        const base = detectFile.name.replace(/\.(xlsx|xls|csv)$/i, '');
         setInfoField('name', base);
       }
-      toast(`${res.columns.length} columnas detectadas en la hoja "${res.sheet}" (${res.rowCount} filas)`, 'info');
+      const where = res.sheet ? `en la hoja "${res.sheet}"` : 'en el CSV';
+      toast(`${res.columns.length} columnas detectadas ${where} (${res.rowCount} filas)`, 'info');
       setDetectOpen(false);
       setDetectFile(null);
     } catch (err) {
@@ -350,7 +351,7 @@ export default function CreateTablePage() {
       </div>
 
       <Modal
-        open={detectOpen} title="Detectar columnas desde un Excel" onClose={() => setDetectOpen(false)}
+        open={detectOpen} title="Detectar columnas desde Excel o CSV" onClose={() => setDetectOpen(false)}
         footer={(
           <>
             <button type="button" className="btn-secondary" onClick={() => setDetectOpen(false)}>Cancelar</button>
@@ -361,7 +362,7 @@ export default function CreateTablePage() {
         )}
       >
         <p className="muted" style={{ marginTop: 0 }}>
-          Se leerán los encabezados de la {info.sheet_name ? `hoja "${info.sheet_name}"` : 'primera hoja'} y se propondrán nombres y tipos.
+          Se leerán los encabezados de la {info.sheet_name ? `hoja "${info.sheet_name}"` : 'primera hoja'} (en un CSV, de la primera fila) y se propondrán nombres y tipos.
           Podrás ajustarlos antes de crear la tabla. Las columnas actuales se reemplazarán.
         </p>
         {detectError && <div className="field"><Alert type="error">{detectError}</Alert></div>}

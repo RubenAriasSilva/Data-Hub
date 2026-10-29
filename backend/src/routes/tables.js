@@ -26,10 +26,10 @@ router.get('/', async (req, res) => {
   res.json(await listTablesWithStats());
 });
 
-// Excel de ejemplo -> columnas sugeridas para el formulario de creación
+// Excel o CSV de ejemplo -> columnas sugeridas para el formulario de creación
 router.post('/detect', excelUpload, async (req, res) => {
-  if (!req.file) throw new HttpError(400, 'Adjunta un archivo Excel en el campo "file"');
-  res.json(detectColumns(req.file.buffer, req.body?.sheet_name || null));
+  if (!req.file) throw new HttpError(400, 'Adjunta un archivo Excel o CSV en el campo "file"');
+  res.json(detectColumns(req.file.buffer, req.body?.sheet_name || null, req.file.originalname));
 });
 
 // Modo SQL: CREATE TABLE -> columnas para revisar en el formulario antes de crear

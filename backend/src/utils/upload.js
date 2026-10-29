@@ -18,9 +18,9 @@ export function fileUpload(extensions, maxMb = Number(process.env.MAX_UPLOAD_MB 
   }).single('file');
 }
 
-export const excelUpload = fileUpload(['.xlsx', '.xls']);
-// Cargas de datos: Excel o JSON
-export const dataUpload = fileUpload(['.xlsx', '.xls', '.json']);
+export const excelUpload = fileUpload(['.xlsx', '.xls', '.csv']);
+// Cargas de datos: Excel, CSV o JSON
+export const dataUpload = fileUpload(['.xlsx', '.xls', '.csv', '.json']);
 
 export function sendXlsx(res, buffer, filename) {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

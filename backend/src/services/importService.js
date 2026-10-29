@@ -1,5 +1,5 @@
 import { getPool } from '../config/db.js';
-import { parseSheet, mapRows } from './excelService.js';
+import { parseSheet, mapRows, isCsv } from './excelService.js';
 import { upsertRecords } from './dataService.js';
 import { convertValue, ConversionError } from '../utils/types.js';
 import { normalizeHeader } from '../utils/identifiers.js';
@@ -53,9 +53,9 @@ async function finalize(meta, { source, filename, records, errors, warnings, tot
 }
 
 export async function importExcel(meta, file, source = 'excel') {
-  if (!file) throw new HttpError(400, 'Adjunta un archivo Excel (.xlsx o .xls) en el campo "file"');
+  if (!file) throw new HttpError(400, 'Adjunta un archivo Excel (.xlsx o .xls) o CSV (.csv) en el campo "file"');
   const startedAt = Date.now();
-  const parsed = parseSheet(file.buffer, meta.table.sheet_name);
+  const parsed = parseSheet(file.buffer, meta.table.sheet_name, file.originalname);
   const mapped = mapRows(parsed, meta.columns);
   return finalize(meta, { source, filename: file.originalname, startedAt, ...mapped });
 }
@@ -114,9 +114,10 @@ export async function importJson(meta, body, { source = 'api', filename = null }
   return finalize(meta, { source, filename, records, errors, warnings, totalRows: input.length, startedAt });
 }
 
-/** Carga un archivo subido: .json se interpreta como JSON; cualquier otro, como Excel. */
+/** Carga un archivo subido: .json como JSON, .csv como CSV y cualquier otro como Excel. */
 export async function importFile(meta, file) {
-  if (!file) throw new HttpError(400, 'Adjunta un archivo Excel (.xlsx o .xls) o JSON (.json) en el campo "file"');
+  if (!file) throw new HttpError(400, 'Adjunta un archivo Excel (.xlsx o .xls), CSV (.csv) o JSON (.json) en el campo "file"');
+  if (isCsv(file.originalname)) return importExcel(meta, file, 'csv');
   if (!file.originalname.toLowerCase().endsWith('.json')) return importExcel(meta, file);
   let body;
   try {

@@ -100,6 +100,38 @@ test('detectColumns sugiere tipos y clave', () => {
   assert.equal(columns[0].is_key, true);
 });
 
+test('parseSheet + mapRows (csv con ";" en windows-1252, hoja ignorada)', () => {
+  const text = 'Número de Orden;Fecha;Monto ($);Procesado\r\n00123;20/05/2024;"1.234,56";sí\r\n;;;\r\nA-2;2024-01-01;5;no\r\n';
+  const buf = Buffer.from(text, 'latin1'); // é/ú/í en un byte, como guarda Excel en Windows
+  const parsed = parseSheet(buf, 'Hoja1', 'datos.CSV');
+  assert.equal(parsed.sheet, null);
+  assert.deepEqual(parsed.headers, ['Número de Orden', 'Fecha', 'Monto ($)', 'Procesado']);
+  const { records, errors, totalRows } = mapRows(parsed, COLUMNS);
+  assert.equal(totalRows, 2);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(records, [
+    { numero_orden: '00123', fecha: '2024-05-20', monto: 1234.56, procesado: 1 },
+    { numero_orden: 'A-2', fecha: '2024-01-01', monto: 5, procesado: 0 },
+  ]);
+});
+
+test('detectColumns con csv (utf-8 con BOM y ",")', () => {
+  const buf = Buffer.from('﻿ID Bot,Código,Inicio,Duración (s),Exitoso,Comentario\n1,007,2024-01-01 08:30,"12,5",true,ok\n2,008,2024-01-02 09:00,7,false,falló\n');
+  const { sheet, columns, rowCount } = detectColumns(buf, null, 'bots.csv');
+  assert.equal(sheet, null);
+  assert.equal(rowCount, 2);
+  assert.deepEqual(columns.map((c) => [c.excel_name, c.data_type]), [
+    ['ID Bot', 'int'], ['Código', 'text'], ['Inicio', 'datetime'], ['Duración (s)', 'decimal'], ['Exitoso', 'boolean'], ['Comentario', 'text'],
+  ]);
+  assert.equal(columns[0].is_key, true);
+});
+
+test('importFile con csv valida columnas antes de tocar la base', async () => {
+  const meta = { table: { id: 1, sheet_name: 'Hoja1' }, columns: COLUMNS };
+  const file = { originalname: 'datos.csv', buffer: Buffer.from('Fecha;Monto ($)\n2024-01-01;5\n') };
+  await assert.rejects(importFile(meta, file), /Número de Orden/);
+});
+
 test('validateColumns y SQL de creación', () => {
   assert.throws(() => validateColumns([{ excel_name: 'A', db_name: 'a', data_type: 'text' }]), /clave/);
   assert.throws(() => validateColumns([{ excel_name: 'A', db_name: 'A b', data_type: 'text', is_key: true }]), /BD/);

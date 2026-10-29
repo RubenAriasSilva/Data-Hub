@@ -93,7 +93,7 @@ export function CodeBlock({ children }) {
   );
 }
 
-export function FileDropzone({ file, onFile, accept = '.xlsx,.xls', hint = 'Formatos: .xlsx, .xls' }) {
+export function FileDropzone({ file, onFile, accept = '.xlsx,.xls,.csv', hint = 'Formatos: .xlsx, .xls, .csv' }) {
   const input = useRef(null);
   const [over, setOver] = useState(false);
   const pick = (f) => f && onFile(f);
