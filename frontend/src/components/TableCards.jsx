@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Table2 } from 'lucide-react';
 import { Badge } from './ui';
-import { fmtNumber, fmtRelative, STATUS, tablePath } from '../utils/format';
+import { fmtNumber, fmtRelative, STATUS, tablePath, engineOf, isMongo } from '../utils/format';
 
 /** Cuadrícula de tarjetas de tablas (de una categoría o de una aplicación). */
 export default function TableCards({ tables }) {
@@ -19,10 +19,13 @@ export default function TableCards({ tables }) {
           </div>
           {t.description && <div className="muted small">{t.description}</div>}
           <div className="table-card-meta">
-            <span><strong>{fmtNumber(t.row_count)}</strong> registros</span>
-            <span><strong>{t.column_count}</strong> columnas</span>
+            <span><strong>{fmtNumber(t.row_count)}</strong> {engineOf(t).records}</span>
+            {isMongo(t)
+              ? <span><strong>{t.key_fields?.length || 0}</strong> claves</span>
+              : <span><strong>{t.column_count}</strong> columnas</span>}
           </div>
           <div className="row">
+            <Badge color={engineOf(t).color}>{engineOf(t).label}</Badge>
             {t.last_upload_status
               ? <Badge color={STATUS[t.last_upload_status]?.color}>{STATUS[t.last_upload_status]?.label}</Badge>
               : <Badge color="gray">Sin cargas</Badge>}

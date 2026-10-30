@@ -19,8 +19,8 @@ export function fileUpload(extensions, maxMb = Number(process.env.MAX_UPLOAD_MB 
 }
 
 export const excelUpload = fileUpload(['.xlsx', '.xls', '.csv']);
-// Cargas de datos: Excel, CSV o JSON
-export const dataUpload = fileUpload(['.xlsx', '.xls', '.csv', '.json']);
+// Cargas de datos: Excel, CSV o JSON; NDJSON/JSONL y BSON solo en tablas MongoDB
+export const dataUpload = fileUpload(['.xlsx', '.xls', '.csv', '.json', '.ndjson', '.jsonl', '.bson']);
 
 export function sendXlsx(res, buffer, filename) {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

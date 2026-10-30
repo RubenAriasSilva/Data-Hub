@@ -95,6 +95,16 @@ const ALTERS = [
     exists: { column: ['applications', 'readme'] },
     sql: 'ALTER TABLE applications ADD COLUMN readme LONGTEXT NULL, ADD COLUMN readme_updated_at TIMESTAMP NULL',
   },
+  // Motor de cada tabla: 'mysql' (tabla física) o 'mongodb' (colección; db_table guarda su nombre)
+  {
+    exists: { column: ['hub_tables', 'db_type'] },
+    sql: "ALTER TABLE hub_tables ADD COLUMN db_type VARCHAR(10) NOT NULL DEFAULT 'mysql' AFTER db_table",
+  },
+  // Campos clave (rutas como "cliente.id", en JSON) para el upsert de las colecciones MongoDB
+  {
+    exists: { column: ['hub_tables', 'key_fields'] },
+    sql: 'ALTER TABLE hub_tables ADD COLUMN key_fields VARCHAR(1000) NULL AFTER db_type',
+  },
 ];
 
 const CHECKS = {

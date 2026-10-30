@@ -330,6 +330,24 @@ td.null { color: var(--txt4); font-style: italic; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
 
+/* Documentos MongoDB */
+.doc-card { padding: 14px 18px; }
+.doc-card-head { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--divider); }
+.json-view { font-family: var(--mono); font-size: .8rem; line-height: 1.6; overflow-x: auto; }
+.json-line { white-space: pre; padding-left: 16px; }
+.json-children { padding-left: 16px; border-left: 1px dashed var(--divider); margin-left: 6px; }
+.json-toggle { display: inline-flex; align-items: center; gap: 2px; background: none; border: none; padding: 0; cursor: pointer; font: inherit; color: var(--txt1); }
+.json-toggle:hover .json-key { text-decoration: underline; }
+.json-key { color: var(--txt2); font-weight: 600; }
+.json-str { color: #166534; }
+.json-num { color: #1d4ed8; }
+.json-bool { color: #b45309; }
+.json-null { color: var(--txt4); font-style: italic; }
+.json-date { color: #7c3aed; }
+.json-oid { color: #0f766e; }
+.json-punct { color: var(--txt3); }
+.tab:disabled { opacity: .45; cursor: not-allowed; }
+
 @media (max-width: 900px) {
   .sidebar { width: 72px; padding: 14px 8px; }
   .sidebar-brand div, .sidebar-item span, .sidebar-item .count, .sidebar-section, .sidebar-footer span { display: none; }

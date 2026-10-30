@@ -43,6 +43,12 @@ function Sidebar() {
         <span className={`status-dot ${dbReady ? 'ok' : health ? 'down' : ''}`} />
         <span>{dbReady ? `MySQL · ${health.db.database}` : health ? 'MySQL sin conexión' : 'Conectando…'}</span>
       </div>
+      {health?.mongo?.enabled && (
+        <div className="sidebar-footer" title={health.mongo.error ?? ''} style={{ marginTop: 0, paddingTop: 0 }}>
+          <span className={`status-dot ${health.mongo.ready ? 'ok' : 'down'}`} />
+          <span>{health.mongo.ready ? `MongoDB · ${health.mongo.database}` : 'MongoDB sin conexión'}</span>
+        </div>
+      )}
       <CategoryFormModal open={creating} onClose={() => setCreating(false)} />
     </aside>
   );

@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, ArrowUp, ArrowDown, Wand2, Code2, Save, Key, TableProperties, FileCode2 } from 'lucide-react';
+import { Plus, Trash2, ArrowUp, ArrowDown, Wand2, Code2, Save, Key, TableProperties, FileCode2, Database, Leaf, X } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { Alert, Modal, FileDropzone, Spinner, CodeBlock } from '../components/ui';
-import { DATA_TYPES, IDENT_RE, slugify, normalizeHeader, buildCreateSql } from '../utils/format';
+import { DATA_TYPES, IDENT_RE, FIELD_PATH_RE, ENGINES, slugify, normalizeHeader, buildCreateSql } from '../utils/format';
 
 let uid = 1;
 const newColumn = (data = {}) => ({
   uid: uid++, excel_name: '', db_name: '', data_type: 'text', is_key: false, nullable: true, dbTouched: false, ...data,
 });
 
-const MAX_DB_NAME = 64; // límite de MySQL para nombres de tabla
+const MAX_DB_NAME = 64; // límite de MySQL para nombres de tabla (también se aplica a las colecciones)
+const MAX_KEY_FIELDS = 5;
 
 const SQL_EXAMPLE = `CREATE TABLE ordenes (
   orden BIGINT NOT NULL COMMENT 'Orden',
@@ -46,7 +47,8 @@ function validate(columns) {
 export default function CreateTablePage() {
   const { categorySlug, appSlug } = useParams();
   const navigate = useNavigate();
-  const { categories, refreshCategories, toast } = useApp();
+  const { categories, refreshCategories, toast, health } = useApp();
+  const mongoEnabled = Boolean(health?.mongo?.enabled);
   const category = categories.find((c) => c.slug === categorySlug);
   const [application, setApplication] = useState(null);
   const basePath = `/c/${categorySlug}${appSlug ? `/a/${appSlug}` : ''}`;
@@ -71,6 +73,10 @@ export default function CreateTablePage() {
   const [sqlText, setSqlText] = useState(SQL_EXAMPLE);
   const [sqlWarnings, setSqlWarnings] = useState([]);
   const [parsing, setParsing] = useState(false);
+  const [engine, setEngine] = useState('mysql'); // 'mysql' | 'mongodb'
+  const [keyFields, setKeyFields] = useState([]);
+  const [keyInput, setKeyInput] = useState('');
+  const mongo = engine === 'mongodb';
 
   useEffect(() => {
     if (!appSlug) return;
@@ -78,7 +84,17 @@ export default function CreateTablePage() {
   }, [categorySlug, appSlug]);
 
   const validation = useMemo(() => validate(columns), [columns]);
-  const hasErrors = Object.keys(validation.byIndex).length > 0 || validation.general.length > 0 || !info.name.trim() || !slugRe.test(info.slug);
+  const columnErrors = !mongo && (Object.keys(validation.byIndex).length > 0 || validation.general.length > 0);
+  const hasErrors = columnErrors || !info.name.trim() || !slugRe.test(info.slug);
+  const keyError = keyInput.trim() && !FIELD_PATH_RE.test(keyInput.trim())
+    ? 'Usa letras, números y _ separados por punto (ej. cliente.id)' : null;
+
+  const addKey = () => {
+    const k = keyInput.trim();
+    if (!k || keyError || keyFields.includes(k) || keyFields.length >= MAX_KEY_FIELDS) return;
+    setKeyFields((ks) => [...ks, k]);
+    setKeyInput('');
+  };
   const dbTable = `${prefix}${info.slug || '…'}`;
 
   const setInfoField = (k, v) => setInfo((f) => {
@@ -166,9 +182,14 @@ export default function CreateTablePage() {
         category_id: category.id,
         application_id: application?.id,
         ...info,
-        columns: columns.map(({ excel_name, db_name, data_type, is_key, nullable }) => ({
-          excel_name: excel_name.trim(), db_name, data_type, is_key, nullable,
-        })),
+        db_type: engine,
+        ...(mongo
+          ? { key_fields: keyFields }
+          : {
+            columns: columns.map(({ excel_name, db_name, data_type, is_key, nullable }) => ({
+              excel_name: excel_name.trim(), db_name, data_type, is_key, nullable,
+            })),
+          }),
       });
       await refreshCategories();
       toast(`Tabla "${created.name}" creada`);
@@ -188,11 +209,13 @@ export default function CreateTablePage() {
           <h1 className="page-title">Nueva tabla</h1>
           <p className="page-subtitle">
             {category ? `Categoría ${category.name}` : categorySlug}
-            {appSlug && ` · Aplicación ${application?.name ?? appSlug}`} · Define cómo se relaciona cada encabezado del Excel con su columna en la base de datos
+            {appSlug && ` · Aplicación ${application?.name ?? appSlug}`} · {mongo
+              ? 'Colección de documentos JSON libres en MongoDB'
+              : 'Define cómo se relaciona cada encabezado del Excel con su columna en la base de datos'}
           </p>
         </div>
         <div className="row">
-          <button type="button" className="btn-secondary" onClick={() => setDetectOpen(true)}><Wand2 size={16} /> Detectar desde Excel</button>
+          {!mongo && <button type="button" className="btn-secondary" onClick={() => setDetectOpen(true)}><Wand2 size={16} /> Detectar desde Excel</button>}
           <button type="button" className="btn-primary" onClick={submit} disabled={saving || (showErrors && hasErrors)}>
             {saving ? <Spinner /> : <Save size={16} />} Crear tabla
           </button>
@@ -204,6 +227,27 @@ export default function CreateTablePage() {
 
         <div className="glass card-pad">
           <p className="section-title">Información general</p>
+          <div className="field">
+            <label className="form-label">Base de datos</label>
+            <div className="tabs" style={{ margin: 0 }}>
+              <button type="button" className={`tab${!mongo ? ' active' : ''}`} onClick={() => setEngine('mysql')}>
+                <Database size={15} /> MySQL
+              </button>
+              <button
+                type="button" className={`tab${mongo ? ' active' : ''}`} disabled={!mongoEnabled}
+                title={mongoEnabled ? '' : 'Configura MONGO_URI en backend/.env para habilitar MongoDB'}
+                onClick={() => setEngine('mongodb')}
+              >
+                <Leaf size={15} /> MongoDB
+              </button>
+            </div>
+            <div className="field-hint">
+              {mongo
+                ? 'Documentos JSON sin columnas fijas (objetos anidados y arreglos). Se cargan con JSON, NDJSON, BSON, Excel o CSV.'
+                : 'Tabla con columnas y tipos definidos. Se carga con Excel, CSV o JSON.'}
+              {!mongoEnabled && ' MongoDB no está configurado (MONGO_URI en backend/.env).'}
+            </div>
+          </div>
           <div className="grid grid-2" style={{ gap: '0 16px' }}>
             <div className="field">
               <label className="form-label">Nombre</label>
@@ -218,7 +262,9 @@ export default function CreateTablePage() {
                 className={`mono${showErrors && !slugRe.test(info.slug) ? ' invalid' : ''}`}
                 value={info.slug} onChange={(e) => { setSlugTouched(true); setInfoField('slug', e.target.value); }}
               />
-              <div className="field-hint">Tabla MySQL: <span className="code-inline">{dbTable}</span> · URL: <span className="code-inline">/api/v1/{categorySlug}{appSlug && `/${appSlug}`}/{info.slug || '…'}</span> · Máx. {maxSlug} caracteres</div>
+              <div className="field-hint">
+                {ENGINES[engine].container}: <span className="code-inline">{dbTable}</span> · URL: <span className="code-inline">/api/{mongo ? 'mongo/' : ''}v1/{categorySlug}{appSlug && `/${appSlug}`}/{info.slug || '…'}</span> · Máx. {maxSlug} caracteres
+              </div>
             </div>
             <div className="field">
               <label className="form-label">Descripción</label>
@@ -231,18 +277,52 @@ export default function CreateTablePage() {
           </div>
         </div>
 
-        <div className="tabs glass" style={{ marginBottom: 0 }}>
-          <button type="button" className={`tab${mode === 'form' ? ' active' : ''}`} onClick={() => setMode('form')}>
-            <TableProperties size={15} /> Formulario
-          </button>
-          <button type="button" className={`tab${mode === 'sql' ? ' active' : ''}`} onClick={() => setMode('sql')}>
-            <FileCode2 size={15} /> SQL
-          </button>
-        </div>
+        {mongo && (
+          <div className="glass card-pad">
+            <p className="section-title">Campos clave (opcional)</p>
+            <p className="muted small" style={{ marginTop: 0 }}>
+              Con campos clave, al cargar un documento cuya clave ya existe se <strong>actualiza</strong> (upsert) en lugar de duplicarse.
+              Sin campos clave, cada carga <strong>inserta</strong> documentos nuevos. Para campos anidados usa punto, p. ej. <span className="code-inline">cliente.id</span>.
+            </p>
+            <div className="row">
+              {keyFields.map((k) => (
+                <span key={k} className="badge badge-blue mono">
+                  <Key size={10} /> {k}
+                  <button type="button" className="btn-ghost btn-icon" style={{ padding: 0, marginLeft: 2 }} title="Quitar" onClick={() => setKeyFields((ks) => ks.filter((x) => x !== k))}>
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+              {!keyFields.length && <span className="muted small">Sin campos clave: solo inserción.</span>}
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <input
+                className={`mono${keyError ? ' invalid' : ''}`} style={{ maxWidth: 320 }} value={keyInput} placeholder="codigo o cliente.id"
+                onChange={(e) => setKeyInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKey(); } }}
+              />
+              <button type="button" className="btn-secondary btn-sm" onClick={addKey} disabled={!keyInput.trim() || Boolean(keyError) || keyFields.length >= MAX_KEY_FIELDS}>
+                <Plus size={14} /> Agregar clave
+              </button>
+            </div>
+            {keyError && <div className="field-error">{keyError}</div>}
+            <div className="field-hint" style={{ marginTop: 8 }}>Máximo {MAX_KEY_FIELDS} campos. Se crea un índice único con ellos. Se pueden cambiar después en la pestaña Estructura.</div>
+          </div>
+        )}
 
-        {mode === 'form' && sqlWarnings.map((w) => <Alert key={w} type="warning">{w}</Alert>)}
+        {!mongo && (
+          <div className="tabs glass" style={{ marginBottom: 0 }}>
+            <button type="button" className={`tab${mode === 'form' ? ' active' : ''}`} onClick={() => setMode('form')}>
+              <TableProperties size={15} /> Formulario
+            </button>
+            <button type="button" className={`tab${mode === 'sql' ? ' active' : ''}`} onClick={() => setMode('sql')}>
+              <FileCode2 size={15} /> SQL
+            </button>
+          </div>
+        )}
 
-        {mode === 'sql' && (
+        {!mongo && mode === 'form' && sqlWarnings.map((w) => <Alert key={w} type="warning">{w}</Alert>)}
+
+        {!mongo && mode === 'sql' && (
           <div className="glass card-pad">
             <p className="section-title">Definir con SQL</p>
             <textarea
@@ -263,7 +343,7 @@ export default function CreateTablePage() {
           </div>
         )}
 
-        {mode === 'form' && (
+        {!mongo && mode === 'form' && (
           <div className="glass">
             <div className="card-pad row" style={{ paddingBottom: 12 }}>
               <p className="section-title" style={{ margin: 0 }}>Columnas ({columns.length})</p>

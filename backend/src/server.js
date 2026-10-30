@@ -6,10 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import multer from 'multer';
 import { connectWithRetry, dbState } from './config/db.js';
+import { connectMongoWithRetry, mongoState } from './config/mongo.js';
 import categoriesRouter from './routes/categories.js';
 import applicationsRouter from './routes/applications.js';
 import tablesRouter from './routes/tables.js';
 import externalRouter from './routes/external.js';
+import externalMongoRouter from './routes/externalMongo.js';
 import statsRouter from './routes/stats.js';
 
 const app = express();
@@ -21,7 +23,8 @@ app.use(express.json({ limit: '50mb' }));
 
 app.get('/api/health', (req, res) => {
   const db = dbState();
-  res.status(db.ready ? 200 : 503).json({ status: db.ready ? 'ok' : 'degraded', db });
+  // MongoDB es opcional: su estado se informa pero no cambia el status general
+  res.status(db.ready ? 200 : 503).json({ status: db.ready ? 'ok' : 'degraded', db, mongo: mongoState() });
 });
 
 app.use('/api/categories', categoriesRouter);
@@ -29,6 +32,7 @@ app.use('/api/applications', applicationsRouter);
 app.use('/api/tables', tablesRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/v1', externalRouter);
+app.use('/api/mongo/v1', externalMongoRouter);
 app.use('/api', (req, res) => res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.originalUrl}` }));
 
 // En producción, el backend sirve el frontend compilado (frontend/dist)
@@ -68,3 +72,4 @@ app.listen(PORT, HOST, (err) => {
   console.log(`[api] Data Hub escuchando en http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
 });
 connectWithRetry();
+connectMongoWithRetry();

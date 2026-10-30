@@ -16,7 +16,19 @@ export const IDENT_RE = /^[a-z][a-z0-9_]{0,63}$/;
 const appSegment = (t) => (t.application_slug ? `/a/${t.application_slug}` : '');
 export const parentPath = (t) => `/c/${t.category_slug}${appSegment(t)}`;
 export const tablePath = (t) => `${parentPath(t)}/t/${t.table_slug ?? t.slug}`;
-export const apiPath = (t) => `/api/v1/${t.category_slug}${t.application_slug ? `/${t.application_slug}` : ''}/${t.table_slug ?? t.slug}`;
+// Las colecciones MongoDB tienen su propia API (/api/mongo/v1)
+export const apiPath = (t) => `/api/${t.db_type === 'mongodb' ? 'mongo/' : ''}v1/${t.category_slug}${t.application_slug ? `/${t.application_slug}` : ''}/${t.table_slug ?? t.slug}`;
+
+// Motor de base de datos de cada tabla (hub_tables.db_type)
+export const ENGINES = {
+  mysql: { label: 'MySQL', color: 'blue', container: 'Tabla MySQL', records: 'registros' },
+  mongodb: { label: 'MongoDB', color: 'green', container: 'Colección MongoDB', records: 'documentos' },
+};
+export const engineOf = (t) => ENGINES[t?.db_type] ?? ENGINES.mysql;
+export const isMongo = (t) => t?.db_type === 'mongodb';
+
+// Rutas de campos de MongoDB (claves): "cliente.id"
+export const FIELD_PATH_RE = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 
 export function slugify(input, max = 64) {
   let s = String(input ?? '')
@@ -59,6 +71,8 @@ export const SOURCES = {
   excel: { label: 'Excel', color: 'gray' },
   csv: { label: 'CSV', color: 'gray' },
   json: { label: 'JSON', color: 'blue' },
+  ndjson: { label: 'NDJSON', color: 'blue' },
+  bson: { label: 'BSON', color: 'green' },
   api: { label: 'API', color: 'blue' },
 };
 

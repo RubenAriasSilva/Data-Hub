@@ -8,17 +8,20 @@ import { HttpError } from '../utils/httpError.js';
 const MAX_ERRORS = 500;
 const MAX_JSON_ROWS = 50000;
 
-/** Ejecuta el upsert, registra en upload_logs y arma el resultado. */
-async function finalize(meta, { source, filename, records, errors, warnings, totalRows, startedAt }) {
+/**
+ * Ejecuta el upsert, registra en upload_logs y arma el resultado.
+ * write(meta, records) hace la escritura: upsert de MySQL por defecto; MongoDB pasa el suyo.
+ */
+export async function finalize(meta, { source, filename, records, errors, warnings, totalRows, startedAt }, write = upsertRecords) {
   let inserted = 0;
   let updated = 0;
   let dbError = null;
   if (totalRows === 0) warnings.push('No se recibieron filas de datos');
   try {
-    ({ inserted, updated } = await upsertRecords(meta, records));
+    ({ inserted, updated } = await write(meta, records));
   } catch (err) {
     if (err.status) throw err;
-    dbError = err.sqlMessage || err.message;
+    dbError = err.sqlMessage || err.errmsg || err.message;
   }
 
   const failed = dbError ? totalRows : totalRows - records.length;
@@ -117,6 +120,9 @@ export async function importJson(meta, body, { source = 'api', filename = null }
 /** Carga un archivo subido: .json como JSON, .csv como CSV y cualquier otro como Excel. */
 export async function importFile(meta, file) {
   if (!file) throw new HttpError(400, 'Adjunta un archivo Excel (.xlsx o .xls), CSV (.csv) o JSON (.json) en el campo "file"');
+  if (/\.(ndjson|jsonl|bson)$/i.test(file.originalname)) {
+    throw new HttpError(400, 'Los archivos .ndjson, .jsonl y .bson solo se pueden cargar en tablas MongoDB');
+  }
   if (isCsv(file.originalname)) return importExcel(meta, file, 'csv');
   if (!file.originalname.toLowerCase().endsWith('.json')) return importExcel(meta, file);
   let body;

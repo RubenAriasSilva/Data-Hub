@@ -1,13 +1,14 @@
 # Data Hub
 
-Administración de información por **categorías** (la primera es **RPAs**). Cada categoría contiene tablas MySQL que se crean desde el frontend, se alimentan con archivos Excel (`.xlsx` / `.xls`), CSV (`.csv`) o por HTTP, y se consultan desde otras aplicaciones.
+Administración de información por **categorías** (la primera es **RPAs**). Cada categoría contiene tablas que se crean desde el frontend, se alimentan con archivos Excel (`.xlsx` / `.xls`), CSV (`.csv`) o por HTTP, y se consultan desde otras aplicaciones. Cada tabla se guarda en **MySQL** (columnas y tipos definidos) o, si se configura, en **MongoDB** (documentos JSON libres; ver [Tablas MongoDB](#tablas-mongodb)).
 
-Stack: **Express 5 + React 18 (Vite) + Node.js + MySQL 8**.
+Stack: **Express 5 + React 18 (Vite) + Node.js + MySQL 8** (+ MongoDB opcional).
 
 ## Requisitos
 
 - Node.js 20 o superior
 - Servidor MySQL 8 (o MariaDB 10.6+) accesible
+- Opcional: servidor MongoDB 5+ accesible, para crear tablas MongoDB
 
 ## Despliegue en un equipo (producción)
 
@@ -123,6 +124,29 @@ ALTER TABLE ordenes
   MODIFY COLUMN autor TEXT,
   RENAME COLUMN monto TO total;
 ```
+
+## Tablas MongoDB
+
+Opcional. Con `MONGO_URI` en `backend/.env` (p. ej. `mongodb://127.0.0.1:27017`) y reiniciando la app, al crear una tabla se puede elegir **MongoDB** en *Base de datos*. Sin `MONGO_URI` la opción aparece deshabilitada y todo funciona solo con MySQL. Los metadatos (categorías, tablas, historial) siempre viven en MySQL; los documentos van a la base `MONGO_DB` (por defecto `data_hub`). Los instaladores no instalan MongoDB: instálalo aparte (servicio de Windows o `mongod` en Linux) o usa un servidor existente.
+
+- **Sin columnas**: cada documento puede tener su propia estructura (objetos anidados, arreglos). La colección se llama igual que una tabla MySQL (`dh_<categoria>[_<aplicacion>]_<tabla>`) y cada documento lleva `_id`, `_created_at` y `_updated_at`.
+- **Campos clave opcionales** (máx. 5, con punto para anidados: `cliente.id`): con clave se hace upsert (si existe, se actualizan los campos enviados y se conservan los demás); sin clave, cada carga inserta. Se cambian en *Estructura* (se reconstruye el índice único; si hay duplicados se rechaza).
+- **Cargar datos**: JSON (`.json` con un documento, un arreglo o `{ "documents": [...] }`, también escrito en la app), NDJSON/JSONL (un documento por línea), **BSON** (documentos concatenados, como el `.bson` de `mongodump`) y Excel/CSV (cada fila es un documento; el encabezado `cliente.nombre` crea `{ cliente: { nombre } }`). Se aceptan tipos extendidos (`{"$date": …}`, `{"$oid": …}`).
+- **Datos**: vista *Documentos* (JSON plegable) o *Tabla* (campos de primer nivel), búsqueda de texto, filtro con sintaxis de MongoDB (`{"total": {"$gte": 100}}`), edición y borrado por documento. *Exportar* descarga un `.json` que se puede volver a cargar.
+- **Estructura**: campos detectados en una muestra (tipos y % de presencia), campos clave, vaciar/eliminar.
+
+API de las colecciones (base `/api/mongo/v1`, distinta de la de MySQL; con aplicación: `/api/mongo/v1/:categoria/:aplicacion/:coleccion`). Los identificadores `upload`, `query` y `docs` están reservados.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/mongo/v1/:categoria/:coleccion` | JSON paginado: `filter` (JSON de MongoDB), `fields`, `sort`, `order`, `page`, `limit` ≤ 5000, `updated_since`, `q` |
+| GET | `/api/mongo/v1/:categoria/:coleccion?format=csv` | CSV aplanado (`cliente.nombre` como columna; arreglos como JSON) para Power BI |
+| POST | `/api/mongo/v1/:categoria/:coleccion/query` | Consulta libre: `{ "filter", "projection", "sort", "skip", "limit" }` |
+| POST | `/api/mongo/v1/:categoria/:coleccion` | Entrada: documento, arreglo o `{ "documents": [...] }` (máx. 50 000) |
+| POST | `/api/mongo/v1/:categoria/:coleccion/upload` | Entrada: archivo `.json`, `.ndjson`, `.jsonl`, `.bson`, `.xlsx`, `.xls` o `.csv` (campo `file`) |
+| GET / PUT / DELETE | `/api/mongo/v1/:categoria/:coleccion/docs/:id` | Leer, reemplazar o eliminar un documento por `_id` |
+
+Por seguridad se rechazan los operadores que ejecutan JavaScript (`$where`, `$function`, `$accumulator`). Si se llama a `/api/v1/...` con una colección MongoDB (o al revés), la respuesta indica la URL correcta.
 
 ## API pública
 

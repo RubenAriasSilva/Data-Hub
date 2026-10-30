@@ -3,9 +3,9 @@ import { Badge, CodeBlock, Alert } from '../../components/ui';
 import { publicApiBase } from '../../api/client';
 import { apiPath, sampleValue } from '../../utils/format';
 
-const METHOD_COLORS = { GET: 'blue', POST: 'green' };
+const METHOD_COLORS = { GET: 'blue', POST: 'green', PUT: 'orange', DELETE: 'red' };
 
-function Endpoint({ method, url, title, children }) {
+export function Endpoint({ method, url, title, children }) {
   return (
     <div className="glass endpoint">
       <div className="endpoint-head">

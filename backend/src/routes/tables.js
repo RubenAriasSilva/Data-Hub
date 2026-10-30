@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import { getPool } from '../config/db.js';
-import { getTableMetaById, listTablesWithStats, countRows } from '../services/metaService.js';
+import { EJSON } from 'bson';
+import { getTableMetaById, listTablesWithStats, countRecords, isMongo } from '../services/metaService.js';
+import { mongoEnabled } from '../config/mongo.js';
+import {
+  validateKeyFields, createCollection, dropCollection, clearCollection, setKeyFields, queryDocuments,
+  getDocument, replaceDocument, deleteDocument, inferFields, allDocuments, toJson,
+} from '../services/mongoService.js';
+import { importMongoFile, importMongoJson } from '../services/mongoImportService.js';
 import {
   validateColumns, buildCreateTableSql, dropTableSql, truncateTableSql,
 } from '../services/schemaService.js';
@@ -15,12 +22,24 @@ import { HttpError } from '../utils/httpError.js';
 
 const router = Router();
 const RESERVED_QUERY = new Set(['page', 'limit', 'sort', 'order', 'q', 'updated_since']);
-const MAX_DB_NAME = 64; // límite de MySQL para nombres de tabla
+const MAX_DB_NAME = 64; // límite de MySQL para nombres de tabla (también se aplica a las colecciones)
+// Segmentos fijos de las URLs de la API: /upload, /query y /docs/:id
+const RESERVED_SLUGS = new Set(['upload', 'query', 'docs']);
+const ENGINES = new Set(['mysql', 'mongodb']);
 
 const tableResponse = async (id) => {
   const meta = await getTableMetaById(id);
-  return { ...meta.table, columns: meta.columns, row_count: await countRows(meta.table.db_table) };
+  return { ...meta.table, columns: meta.columns, row_count: await countRecords(meta.table) };
 };
+
+/** Carga la tabla y exige el motor indicado (columnas/SQL/filas son solo MySQL; documentos solo MongoDB). */
+async function metaFor(id, engine) {
+  const meta = await getTableMetaById(id);
+  if ((engine === 'mongodb') !== isMongo(meta.table)) {
+    throw new HttpError(400, engine === 'mongodb' ? 'Solo disponible para tablas MongoDB' : 'Solo disponible para tablas MySQL');
+  }
+  return meta;
+}
 
 router.get('/', async (req, res) => {
   res.json(await listTablesWithStats());
@@ -39,6 +58,9 @@ router.post('/sql/parse', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const body = req.body ?? {};
+  const dbType = body.db_type || 'mysql';
+  if (!ENGINES.has(dbType)) throw new HttpError(400, `Motor inválido: ${dbType}`);
+  if (dbType === 'mongodb' && !mongoEnabled()) throw new HttpError(400, 'MongoDB no está configurado (MONGO_URI en backend/.env)');
   const pool = getPool();
   const [[category]] = await pool.query('SELECT * FROM categories WHERE id = ?', [body.category_id]);
   if (!category) throw new HttpError(400, 'Categoría inválida');
@@ -58,8 +80,10 @@ router.post('/', async (req, res) => {
     throw new HttpError(400, `El identificador debe iniciar con letra y tener solo minúsculas, números y _ (máx. ${maxSlug})`);
   }
   // POST /api/v1/<cat>/<tabla>/upload tiene la misma forma que POST /api/v1/<cat>/<app>/<tabla>
-  if (slug === 'upload') throw new HttpError(400, 'El identificador "upload" está reservado para la API');
-  const columns = validateColumns(body.columns);
+  if (RESERVED_SLUGS.has(slug)) throw new HttpError(400, `El identificador "${slug}" está reservado para la API`);
+  const mongo = dbType === 'mongodb';
+  const keyFields = mongo ? validateKeyFields(body.key_fields) : null;
+  const columns = mongo ? [] : validateColumns(body.columns);
   const dbTable = `${prefix}${slug}`;
   const parentName = application ? `la aplicación ${application.name}` : `la categoría ${category.name}`;
 
@@ -70,31 +94,41 @@ router.post('/', async (req, res) => {
   );
   if (dup) throw new HttpError(409, `Ya existe la tabla "${slug}" en ${parentName}`);
 
-  // El DDL hace commit implícito en MySQL: primero se crea la tabla física y, si
-  // fallan los metadatos, se elimina para no dejar basura.
-  try {
-    await pool.query(buildCreateTableSql(dbTable, columns));
-  } catch (err) {
-    if (err.code === 'ER_TABLE_EXISTS_ERROR') throw new HttpError(409, `La tabla física ${dbTable} ya existe en MySQL`);
-    throw new HttpError(400, `MySQL rechazó la definición: ${err.sqlMessage || err.message}`);
+  // El DDL hace commit implícito en MySQL: primero se crea la tabla física (o la colección) y,
+  // si fallan los metadatos, se elimina para no dejar basura.
+  if (mongo) await createCollection(dbTable, keyFields);
+  else {
+    try {
+      await pool.query(buildCreateTableSql(dbTable, columns));
+    } catch (err) {
+      if (err.code === 'ER_TABLE_EXISTS_ERROR') throw new HttpError(409, `La tabla física ${dbTable} ya existe en MySQL`);
+      throw new HttpError(400, `MySQL rechazó la definición: ${err.sqlMessage || err.message}`);
+    }
   }
+  const dropPhysical = () => (mongo ? dropCollection(dbTable) : pool.query(dropTableSql(dbTable)));
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     const [r] = await conn.query(
-      'INSERT INTO hub_tables (category_id, application_id, name, slug, db_table, description, sheet_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [category.id, application?.id ?? null, name, slug, dbTable, String(body.description ?? '').trim() || null, String(body.sheet_name ?? '').trim() || null],
+      `INSERT INTO hub_tables (category_id, application_id, name, slug, db_table, db_type, key_fields, description, sheet_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        category.id, application?.id ?? null, name, slug, dbTable, dbType, mongo ? JSON.stringify(keyFields) : null,
+        String(body.description ?? '').trim() || null, String(body.sheet_name ?? '').trim() || null,
+      ],
     );
-    await conn.query(
-      'INSERT INTO hub_columns (table_id, excel_name, db_name, data_type, is_key, nullable, position) VALUES ?',
-      [columns.map((c) => [r.insertId, c.excel_name, c.db_name, c.data_type, c.is_key, c.nullable, c.position])],
-    );
+    if (columns.length) {
+      await conn.query(
+        'INSERT INTO hub_columns (table_id, excel_name, db_name, data_type, is_key, nullable, position) VALUES ?',
+        [columns.map((c) => [r.insertId, c.excel_name, c.db_name, c.data_type, c.is_key, c.nullable, c.position])],
+      );
+    }
     await conn.commit();
     res.status(201).json(await tableResponse(r.insertId));
   } catch (err) {
     await conn.rollback();
-    await pool.query(dropTableSql(dbTable)).catch(() => {});
+    await dropPhysical().catch(() => {});
     throw err;
   } finally {
     conn.release();
@@ -118,21 +152,22 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   const meta = await getTableMetaById(req.params.id);
-  await getPool().query(dropTableSql(meta.table.db_table));
+  if (isMongo(meta.table)) await dropCollection(meta.table.db_table);
+  else await getPool().query(dropTableSql(meta.table.db_table));
   await getPool().query('DELETE FROM hub_tables WHERE id = ?', [meta.table.id]);
   res.status(204).end();
 });
 
 // Agregar columna (siempre opcional y no clave, porque la tabla puede tener datos)
 router.post('/:id/columns', async (req, res) => {
-  const meta = await getTableMetaById(req.params.id);
+  const meta = await metaFor(req.params.id, 'mysql');
   await addColumn(meta, req.body ?? {});
   res.status(201).json(await tableResponse(meta.table.id));
 });
 
 // Editar una columna: nombre en Excel, nombre en BD y tipo (los datos existentes se convierten)
 router.put('/:id/columns/:columnId', async (req, res) => {
-  const meta = await getTableMetaById(req.params.id);
+  const meta = await metaFor(req.params.id, 'mysql');
   const col = meta.columns.find((c) => String(c.id) === String(req.params.columnId));
   if (!col) throw new HttpError(404, 'Columna no encontrada');
   await updateColumn(meta, col, req.body ?? {});
@@ -141,14 +176,14 @@ router.put('/:id/columns/:columnId', async (req, res) => {
 
 // Modo SQL: definición actual como CREATE TABLE (referencia para escribir el ALTER)
 router.get('/:id/sql', async (req, res) => {
-  const meta = await getTableMetaById(req.params.id);
+  const meta = await metaFor(req.params.id, 'mysql');
   res.json({ sql: toCreateSql(meta.table.slug, meta.columns) });
 });
 
 // Modo SQL: ALTER TABLE. Con dryRun solo valida y devuelve el plan.
 // El DDL de MySQL no es transaccional: si un paso falla, los anteriores quedan aplicados y se informa.
 router.post('/:id/sql', async (req, res) => {
-  let meta = await getTableMetaById(req.params.id);
+  let meta = await metaFor(req.params.id, 'mysql');
   const { steps, warnings } = planAlter(meta, req.body?.sql);
   const plan = steps.map((s) => s.description);
   if (req.body?.dryRun || !steps.length) return res.json({ plan, warnings, applied: 0 });
@@ -172,34 +207,36 @@ router.post('/:id/sql', async (req, res) => {
 });
 
 router.get('/:id/rows', async (req, res) => {
-  const meta = await getTableMetaById(req.params.id);
+  const meta = await metaFor(req.params.id, 'mysql');
   const filters = Object.fromEntries(Object.entries(req.query).filter(([k]) => !RESERVED_QUERY.has(k)));
   res.json(await queryRows(meta, { ...req.query, filters, updatedSince: req.query.updated_since }));
 });
 
+// Vaciar: TRUNCATE en MySQL, deleteMany en MongoDB
 router.delete('/:id/rows', async (req, res) => {
   const meta = await getTableMetaById(req.params.id);
-  await getPool().query(truncateTableSql(meta.table.db_table));
+  if (isMongo(meta.table)) await clearCollection(meta);
+  else await getPool().query(truncateTableSql(meta.table.db_table));
   res.status(204).end();
 });
 
 router.delete('/:id/rows/:rowId', async (req, res) => {
-  const meta = await getTableMetaById(req.params.id);
+  const meta = await metaFor(req.params.id, 'mysql');
   const n = await deleteById(meta, req.params.rowId);
   if (!n) throw new HttpError(404, 'Fila no encontrada');
   res.status(204).end();
 });
 
-// Archivo Excel o .json
+// Archivo Excel, CSV o .json (MongoDB además .ndjson/.jsonl y .bson)
 router.post('/:id/upload', dataUpload, async (req, res) => {
   const meta = await getTableMetaById(req.params.id);
-  const result = await importFile(meta, req.file);
+  const result = isMongo(meta.table) ? await importMongoFile(meta, req.file) : await importFile(meta, req.file);
   res.status(resultHttpStatus(result)).json(result);
 });
 
 // JSON escrito en la app: [ {...} ] o { "rows": [ ... ] }
 router.post('/:id/json', async (req, res) => {
-  const meta = await getTableMetaById(req.params.id);
+  const meta = await metaFor(req.params.id, 'mysql');
   const result = await importJson(meta, req.body, { source: 'json' });
   res.status(resultHttpStatus(result)).json(result);
 });
@@ -215,13 +252,18 @@ router.get('/:id/uploads', async (req, res) => {
 });
 
 router.get('/:id/template', async (req, res) => {
-  const meta = await getTableMetaById(req.params.id);
+  const meta = await metaFor(req.params.id, 'mysql');
   const buffer = buildWorkbook(meta.columns.map((c) => c.excel_name), [], meta.table.sheet_name || meta.table.name);
   sendXlsx(res, buffer, `${meta.table.slug}_plantilla.xlsx`);
 });
 
 router.get('/:id/export', async (req, res) => {
   const meta = await getTableMetaById(req.params.id);
+  if (isMongo(meta.table)) {
+    // EJSON relajado: se puede volver a cargar sin perder ObjectId ni fechas
+    res.setHeader('Content-Disposition', `attachment; filename="${meta.table.slug}.json"`);
+    return res.type('application/json').send(EJSON.stringify(await allDocuments(meta), null, 2, { relaxed: true }));
+  }
   const rows = await allRows(meta);
   const buffer = buildWorkbook(
     meta.columns.map((c) => c.excel_name),
@@ -229,6 +271,52 @@ router.get('/:id/export', async (req, res) => {
     meta.table.sheet_name || meta.table.name,
   );
   sendXlsx(res, buffer, `${meta.table.slug}.xlsx`);
+});
+
+// ── Solo MongoDB ────────────────────────────────────────────────────────────
+
+// Documentos paginados: ?filter={"campo": valor}, q, sort, order, page, limit, fields
+router.get('/:id/documents', async (req, res) => {
+  const meta = await metaFor(req.params.id, 'mongodb');
+  res.json(await queryDocuments(meta, { ...req.query, updatedSince: req.query.updated_since }));
+});
+
+// Documentos escritos en la app: { ... }, [ {...} ] o { "documents": [ ... ] }
+router.post('/:id/documents', async (req, res) => {
+  const meta = await metaFor(req.params.id, 'mongodb');
+  const result = await importMongoJson(meta, req.body, { source: 'json' });
+  res.status(resultHttpStatus(result)).json(result);
+});
+
+router.get('/:id/documents/:docId', async (req, res) => {
+  const meta = await metaFor(req.params.id, 'mongodb');
+  res.json(toJson(await getDocument(meta, req.params.docId)));
+});
+
+router.put('/:id/documents/:docId', async (req, res) => {
+  const meta = await metaFor(req.params.id, 'mongodb');
+  res.json(toJson(await replaceDocument(meta, req.params.docId, req.body)));
+});
+
+router.delete('/:id/documents/:docId', async (req, res) => {
+  const meta = await metaFor(req.params.id, 'mongodb');
+  if (!await deleteDocument(meta, req.params.docId)) throw new HttpError(404, 'Documento no encontrado');
+  res.status(204).end();
+});
+
+// Campos detectados en una muestra de documentos
+router.get('/:id/fields', async (req, res) => {
+  const meta = await metaFor(req.params.id, 'mongodb');
+  res.json(await inferFields(meta));
+});
+
+// Cambiar los campos clave (reconstruye el índice único)
+router.put('/:id/keys', async (req, res) => {
+  const meta = await metaFor(req.params.id, 'mongodb');
+  const keys = validateKeyFields(req.body?.key_fields);
+  await setKeyFields(meta, keys);
+  await getPool().query('UPDATE hub_tables SET key_fields = ? WHERE id = ?', [JSON.stringify(keys), meta.table.id]);
+  res.json(await tableResponse(meta.table.id));
 });
 
 export default router;

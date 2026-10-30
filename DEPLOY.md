@@ -105,6 +105,7 @@ Desde la raíz del repositorio también puedes usar `npm run deploy`, `npm run d
 | `PORT` | `4000` | Puerto de la app (web y API) |
 | `HOST` | `0.0.0.0` | `0.0.0.0` = accesible desde la red; `127.0.0.1` = solo este equipo |
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | | Conexión MySQL. La base se crea si no existe |
+| `MONGO_URI`, `MONGO_DB` | vacío, `data_hub` | MongoDB opcional para tablas de tipo MongoDB (ver README). Vacío = deshabilitado |
 | `MAX_UPLOAD_MB` | `20` | Tamaño máximo de los archivos Excel |
 
 Después de cambiar `.env`, ejecuta `pm2 restart data-hub --update-env`.
@@ -117,6 +118,15 @@ mysql -u root -p data_hub < respaldo_data_hub.sql          # restaurar
 ```
 
 En Windows, los ejecutables están en `C:\mysql\mysql-8.4.6-winx64\bin\`.
+
+Si usas tablas MongoDB, respáldalas también (`mongodump` y `mongorestore` vienen en las MongoDB Database Tools):
+
+```bash
+mongodump --uri "mongodb://127.0.0.1:27017" --db data_hub --out respaldo_mongo      # respaldar
+mongorestore --uri "mongodb://127.0.0.1:27017" respaldo_mongo                       # restaurar
+```
+
+Un `.bson` de `mongodump` también se puede cargar directamente en una colección desde *Cargar datos → BSON*.
 
 ## Problemas comunes
 

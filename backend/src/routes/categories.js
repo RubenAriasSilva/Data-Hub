@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getPool } from '../config/db.js';
-import { listTablesWithStats, getTableMetaBySlug, countRows } from '../services/metaService.js';
+import { listTablesWithStats, getTableMetaBySlug, countRecords } from '../services/metaService.js';
 import { slugify, isValidIdentifier } from '../utils/identifiers.js';
 import { HttpError } from '../utils/httpError.js';
 
@@ -38,7 +38,7 @@ async function getApplication(category, appSlug) {
   return app;
 }
 
-const tableDetail = async (meta) => ({ ...meta.table, columns: meta.columns, row_count: await countRows(meta.table.db_table) });
+const tableDetail = async (meta) => ({ ...meta.table, columns: meta.columns, row_count: await countRecords(meta.table) });
 
 // Categoría con sus aplicaciones y sus tablas directas (las que no pertenecen a una aplicación)
 router.get('/:slug', async (req, res) => {

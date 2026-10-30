@@ -1,15 +1,23 @@
 // API pública por tabla en /api/v1/:categoria/:tabla o /api/v1/:categoria/:aplicacion/:tabla
 // Salida: CSV (Power BI) o JSON (apps/RPAs). Entrada: archivo Excel/.json o cuerpo JSON.
 import { Router } from 'express';
-import { getTableMetaBySlug } from '../services/metaService.js';
+import { getTableMetaBySlug, isMongo } from '../services/metaService.js';
 import { importFile, importJson, resultHttpStatus } from '../services/importService.js';
 import { queryRows, allRows } from '../services/dataService.js';
 import { buildCsv } from '../services/excelService.js';
 import { dataUpload } from '../utils/upload.js';
+import { HttpError } from '../utils/httpError.js';
 
 const router = Router();
 const RESERVED_QUERY = new Set(['page', 'limit', 'sort', 'order', 'q', 'updated_since', 'format']);
-const resolve = (req) => getTableMetaBySlug(req.params.category, req.params.app ?? null, req.params.table);
+async function resolve(req) {
+  const meta = await getTableMetaBySlug(req.params.category, req.params.app ?? null, req.params.table);
+  if (isMongo(meta.table)) {
+    const path = [req.params.category, req.params.app, req.params.table].filter(Boolean).join('/');
+    throw new HttpError(400, `"${meta.table.name}" es una colección MongoDB: usa /api/mongo/v1/${path}`);
+  }
+  return meta;
+}
 
 // JSON si se pide con ?format=json o Accept: application/json; CSV en cualquier otro caso
 // (Power BI manda Accept: */*, así que sigue recibiendo CSV).
