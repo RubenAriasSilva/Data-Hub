@@ -129,7 +129,7 @@ export default function DocumentsTab({ table, version, onChanged }) {
           {data && <span className="muted small">{fmtNumber(data.total)} documentos</span>}
           <div className="tabs" style={{ margin: 0 }}>
             {viewTab('docs', Braces, 'Documentos')}
-            {viewTab('table', Table2, 'Tabla')}
+            {viewTab('table', Table2, 'Cuadrícula')}
           </div>
         </div>
         {showFilter && (

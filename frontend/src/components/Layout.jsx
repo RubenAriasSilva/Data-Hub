@@ -4,6 +4,7 @@ import { LayoutDashboard, Plus, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { CategoryIcon, Alert } from './ui';
 import CategoryFormModal from './CategoryFormModal';
+import { collectionLabels } from '../utils/format';
 
 function Sidebar() {
   const { categories, health } = useApp();
@@ -56,7 +57,7 @@ function Sidebar() {
 
 function Topbar() {
   const { pathname } = useLocation();
-  const { categories } = useApp();
+  const { categories, health } = useApp();
   const parts = pathname.split('/').filter(Boolean);
   const crumbs = [{ to: '/', label: 'Data Hub' }];
   if (parts[0] === 'c' && parts[1]) {
@@ -68,7 +69,7 @@ function Topbar() {
       crumbs.push({ to: `/c/${parts[1]}/a/${rest[1]}`, label: rest[1] });
       rest = rest.slice(2);
     }
-    if (rest[0] === 'new') crumbs.push({ label: 'Nueva tabla' });
+    if (rest[0] === 'new') crumbs.push({ label: collectionLabels(health?.mongo?.enabled).newItem });
     if (rest[0] === 't' && rest[1]) crumbs.push({ label: rest[1] });
   } else crumbs.push({ label: 'Dashboard' });
 

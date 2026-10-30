@@ -121,7 +121,7 @@ export async function importJson(meta, body, { source = 'api', filename = null }
 export async function importFile(meta, file) {
   if (!file) throw new HttpError(400, 'Adjunta un archivo Excel (.xlsx o .xls), CSV (.csv) o JSON (.json) en el campo "file"');
   if (/\.(ndjson|jsonl|bson)$/i.test(file.originalname)) {
-    throw new HttpError(400, 'Los archivos .ndjson, .jsonl y .bson solo se pueden cargar en tablas MongoDB');
+    throw new HttpError(400, 'Los archivos .ndjson, .jsonl y .bson solo se pueden cargar en colecciones MongoDB');
   }
   if (isCsv(file.originalname)) return importExcel(meta, file, 'csv');
   if (!file.originalname.toLowerCase().endsWith('.json')) return importExcel(meta, file);

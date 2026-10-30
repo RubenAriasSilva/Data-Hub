@@ -21,9 +21,18 @@ export const apiPath = (t) => `/api/${t.db_type === 'mongodb' ? 'mongo/' : ''}v1
 
 // Motor de base de datos de cada tabla (hub_tables.db_type)
 export const ENGINES = {
-  mysql: { label: 'MySQL', color: 'blue', container: 'Tabla MySQL', records: 'registros' },
-  mongodb: { label: 'MongoDB', color: 'green', container: 'Colección MongoDB', records: 'documentos' },
+  mysql: {
+    label: 'MySQL', color: 'blue', container: 'Tabla MySQL', records: 'registros', noun: 'tabla', Noun: 'Tabla', nounPlural: 'tablas',
+  },
+  mongodb: {
+    label: 'MongoDB', color: 'green', container: 'Colección MongoDB', records: 'documentos', noun: 'colección', Noun: 'Colección', nounPlural: 'colecciones',
+  },
 };
+
+/** Textos de las pantallas que mezclan tablas MySQL y colecciones MongoDB (solo si MongoDB está configurado). */
+export const collectionLabels = (mongoEnabled) => (mongoEnabled
+  ? { plural: 'Tablas y colecciones', newItem: 'Nueva tabla o colección', create: 'Crear tabla o colección', none: 'tablas ni colecciones', one: 'tabla/colección', many: 'tablas/colecciones', column: 'Tabla / colección' }
+  : { plural: 'Tablas', newItem: 'Nueva tabla', create: 'Crear tabla', none: 'tablas', one: 'tabla', many: 'tablas', column: 'Tabla' });
 export const engineOf = (t) => ENGINES[t?.db_type] ?? ENGINES.mysql;
 export const isMongo = (t) => t?.db_type === 'mongodb';
 

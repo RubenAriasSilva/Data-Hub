@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { History } from 'lucide-react';
 import { api } from '../../api/client';
 import { Badge, Loading, EmptyState, Alert, Modal } from '../../components/ui';
-import { fmtNumber, fmtDateTime, STATUS, SOURCES } from '../../utils/format';
+import { fmtNumber, fmtDateTime, STATUS, SOURCES, isMongo } from '../../utils/format';
 import UploadResult from './UploadResult';
 
 export default function HistoryTab({ table, version }) {
+  const mongo = isMongo(table);
   const [logs, setLogs] = useState(null);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -26,8 +27,8 @@ export default function HistoryTab({ table, version }) {
           <table>
             <thead>
               <tr>
-                <th>Fecha</th><th>Origen</th><th>Archivo</th><th className="num">Filas</th><th className="num">Insertadas</th>
-                <th className="num">Actualizadas</th><th className="num">Rechazadas</th><th>Estado</th><th className="num">Duración</th>
+                <th>Fecha</th><th>Origen</th><th>Archivo</th><th className="num">{mongo ? 'Documentos' : 'Filas'}</th><th className="num">{mongo ? 'Insertados' : 'Insertadas'}</th>
+                <th className="num">{mongo ? 'Actualizados' : 'Actualizadas'}</th><th className="num">{mongo ? 'Rechazados' : 'Rechazadas'}</th><th>Estado</th><th className="num">Duración</th>
               </tr>
             </thead>
             <tbody>
@@ -52,6 +53,7 @@ export default function HistoryTab({ table, version }) {
       <Modal open={Boolean(selected)} title={`Carga #${selected?.id ?? ''}`} onClose={() => setSelected(null)} width={820}>
         {selected && (
           <UploadResult
+            mongo={mongo}
             result={{
               ...selected,
               errors: selected.details?.errors,

@@ -119,7 +119,7 @@ mysql -u root -p data_hub < respaldo_data_hub.sql          # restaurar
 
 En Windows, los ejecutables están en `C:\mysql\mysql-8.4.6-winx64\bin\`.
 
-Si usas tablas MongoDB, respáldalas también (`mongodump` y `mongorestore` vienen en las MongoDB Database Tools):
+Si usas colecciones MongoDB, respáldalas también (`mongodump` y `mongorestore` vienen en las MongoDB Database Tools):
 
 ```bash
 mongodump --uri "mongodb://127.0.0.1:27017" --db data_hub --out respaldo_mongo      # respaldar

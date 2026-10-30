@@ -23,7 +23,7 @@ function parseKeyFields(table) {
 }
 
 async function withColumns(table) {
-  if (!table) throw new HttpError(404, 'Tabla no encontrada');
+  if (!table) throw new HttpError(404, 'Tabla o colección no encontrada');
   parseKeyFields(table);
   // Las colecciones MongoDB no tienen columnas: solo campos clave opcionales
   if (isMongo(table)) return { table, columns: [], keyFields: table.key_fields };

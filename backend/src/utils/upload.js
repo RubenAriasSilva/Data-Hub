@@ -19,7 +19,7 @@ export function fileUpload(extensions, maxMb = Number(process.env.MAX_UPLOAD_MB 
 }
 
 export const excelUpload = fileUpload(['.xlsx', '.xls', '.csv']);
-// Cargas de datos: Excel, CSV o JSON; NDJSON/JSONL y BSON solo en tablas MongoDB
+// Cargas de datos: Excel, CSV o JSON; NDJSON/JSONL y BSON solo en colecciones MongoDB
 export const dataUpload = fileUpload(['.xlsx', '.xls', '.csv', '.json', '.ndjson', '.jsonl', '.bson']);
 
 export function sendXlsx(res, buffer, filename) {

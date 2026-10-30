@@ -4,7 +4,7 @@ import { FolderTree, Table2, Rows3, UploadCloud, History } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { Badge, Loading, EmptyState } from '../components/ui';
-import { fmtNumber, fmtDateTime, STATUS, SOURCES, tablePath } from '../utils/format';
+import { fmtNumber, fmtDateTime, STATUS, SOURCES, tablePath, collectionLabels } from '../utils/format';
 
 function Metric({ icon: Icon, label, value, sub }) {
   return (
@@ -19,6 +19,7 @@ function Metric({ icon: Icon, label, value, sub }) {
 
 export default function Dashboard() {
   const { health } = useApp();
+  const labels = collectionLabels(health?.mongo?.enabled);
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const ready = health?.db?.ready;
@@ -40,7 +41,7 @@ export default function Dashboard() {
         <div className="stack">
           <div className="grid grid-metrics">
             <Metric icon={FolderTree} label="Categorías" value={fmtNumber(stats.categories)} />
-            <Metric icon={Table2} label="Tablas" value={fmtNumber(stats.tables)} />
+            <Metric icon={Table2} label={labels.plural} value={fmtNumber(stats.tables)} />
             <Metric icon={Rows3} label="Registros" value={fmtNumber(stats.rows)} />
             <Metric
               icon={UploadCloud} label="Cargas hoy" value={fmtNumber(stats.today.uploads)}
@@ -56,7 +57,7 @@ export default function Dashboard() {
               ) : (
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>Tabla</th><th>Origen</th><th className="num">Filas</th><th>Estado</th><th>Fecha</th></tr></thead>
+                    <thead><tr><th>{labels.column}</th><th>Origen</th><th className="num">Filas</th><th>Estado</th><th>Fecha</th></tr></thead>
                     <tbody>
                       {stats.recent.map((u) => (
                         <tr key={u.id} className="clickable" onClick={() => navigate(`${tablePath(u)}?tab=history`)}>
@@ -77,13 +78,13 @@ export default function Dashboard() {
             </div>
 
             <div className="glass">
-              <div className="card-pad" style={{ paddingBottom: 8 }}><p className="section-title">Tablas con más registros</p></div>
+              <div className="card-pad" style={{ paddingBottom: 8 }}><p className="section-title">{labels.plural} con más registros</p></div>
               {stats.top_tables.length === 0 ? (
-                <EmptyState icon={Table2} title="Aún no hay tablas">Crea la primera desde una categoría del menú.</EmptyState>
+                <EmptyState icon={Table2} title={`Aún no hay ${labels.none}`}>Crea la primera desde una categoría del menú.</EmptyState>
               ) : (
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>Tabla</th><th>Categoría</th><th className="num">Registros</th></tr></thead>
+                    <thead><tr><th>{labels.column}</th><th>Categoría</th><th className="num">Registros</th></tr></thead>
                     <tbody>
                       {stats.top_tables.map((t) => (
                         <tr key={t.id}>

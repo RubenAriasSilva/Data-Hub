@@ -41,7 +41,7 @@ const tableResponse = async (id) => {
 async function metaFor(id, engine) {
   const meta = await getTableMetaById(id);
   if ((engine === 'mongodb') !== isMongo(meta.table)) {
-    throw new HttpError(400, engine === 'mongodb' ? 'Solo disponible para tablas MongoDB' : 'Solo disponible para tablas MySQL');
+    throw new HttpError(400, engine === 'mongodb' ? 'Solo disponible para colecciones MongoDB' : 'Solo disponible para tablas MySQL');
   }
   return meta;
 }
@@ -105,8 +105,9 @@ router.post('/', async (req, res) => {
   // dh_<categoria>[_<aplicacion>]_<tabla> no puede pasar de 64 caracteres
   const prefix = `dh_${category.slug}_${application ? `${application.slug}_` : ''}`;
   const maxSlug = Math.min(40, MAX_DB_NAME - prefix.length);
+  const noun = dbType === 'mongodb' ? 'colección' : 'tabla';
   const name = String(body.name ?? '').trim();
-  if (!name || name.length > 100) throw new HttpError(400, 'El nombre de la tabla es obligatorio (máx. 100 caracteres)');
+  if (!name || name.length > 100) throw new HttpError(400, `El nombre de la ${noun} es obligatorio (máx. 100 caracteres)`);
   const slug = String(body.slug ?? '').trim() || slugify(name, maxSlug);
   if (!isValidIdentifier(slug, maxSlug)) {
     throw new HttpError(400, `El identificador debe iniciar con letra y tener solo minúsculas, números y _ (máx. ${maxSlug})`);
@@ -126,7 +127,7 @@ router.post('/', async (req, res) => {
      OR (category_id = ? AND slug = ? AND ${application ? 'application_id = ?' : 'application_id IS NULL'})`,
     application ? [dbTable, category.id, slug, application.id] : [dbTable, category.id, slug],
   );
-  if (dup) throw new HttpError(409, `Ya existe la tabla "${slug}" en ${parentName}`);
+  if (dup) throw new HttpError(409, `Ya existe una tabla o colección "${slug}" en ${parentName}`);
 
   // El DDL hace commit implícito en MySQL: primero se crea la tabla física (o la colección) y,
   // si fallan los metadatos, se elimina para no dejar basura.
@@ -185,9 +186,11 @@ router.get('/:id', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
-  await getTableMetaById(req.params.id);
+  const meta = await getTableMetaById(req.params.id);
   const name = String(req.body?.name ?? '').trim();
-  if (!name || name.length > 100) throw new HttpError(400, 'El nombre de la tabla es obligatorio (máx. 100 caracteres)');
+  if (!name || name.length > 100) {
+    throw new HttpError(400, `El nombre de la ${isMongo(meta.table) ? 'colección' : 'tabla'} es obligatorio (máx. 100 caracteres)`);
+  }
   await getPool().query(
     'UPDATE hub_tables SET name = ?, description = ?, sheet_name = ? WHERE id = ?',
     [name, String(req.body?.description ?? '').trim() || null, String(req.body?.sheet_name ?? '').trim() || null, req.params.id],

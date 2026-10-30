@@ -189,10 +189,12 @@ export default function CreateTablePage() {
     try {
       const summary = await api.post('/tables/mongo/parse', { script: scriptText });
       setScript({ text: scriptText, summary });
-      if (!info.name.trim()) setInfoField('name', summary.collection);
+      // El nombre y el identificador se toman siempre del código (db.createCollection("users") -> users)
+      setInfo((f) => ({ ...f, name: summary.collection, slug: slugify(summary.collection, maxSlug) }));
+      setSlugTouched(true);
       if (!keyFields.length && summary.suggested_keys.length) setKeyFields(summary.suggested_keys);
       setMongoMode('form');
-      toast(`Código interpretado: ${summary.index_count} índice(s), ${summary.document_count} documento(s). Revisa y pulsa "Crear tabla".`, 'info');
+      toast(`Código interpretado: colección "${summary.collection}", ${summary.index_count} índice(s), ${summary.document_count} documento(s). Revisa y pulsa "Crear colección".`, 'info');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -261,7 +263,7 @@ export default function CreateTablePage() {
           }),
       });
       await refreshCategories();
-      toast(`Tabla "${created.name}" creada`);
+      toast(`${ENGINES[engine].Noun} "${created.name}" creada`);
       const loaded = (r) => `${r.inserted} nuevos, ${r.updated} actualizados${r.failed ? `, ${r.failed} rechazados` : ''}`;
       if (created.initial_load) toast(`Documentos del código: ${loaded(created.initial_load)}`, created.initial_load.status === 'success' ? 'success' : 'info');
       if (mongo && initialData) {
@@ -288,7 +290,7 @@ export default function CreateTablePage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Nueva tabla</h1>
+          <h1 className="page-title">{mongo ? 'Nueva colección' : 'Nueva tabla'}</h1>
           <p className="page-subtitle">
             {category ? `Categoría ${category.name}` : categorySlug}
             {appSlug && ` · Aplicación ${application?.name ?? appSlug}`} · {mongo
@@ -300,7 +302,7 @@ export default function CreateTablePage() {
           {!mongo && <button type="button" className="btn-secondary" onClick={() => setDetectOpen(true)}><Wand2 size={16} /> Detectar desde Excel</button>}
           {mongo && <button type="button" className="btn-secondary" onClick={() => { setDetectError(null); setDataOpen(true); }}><FileUp size={16} /> Crear desde archivo</button>}
           <button type="button" className="btn-primary" onClick={submit} disabled={saving || (showErrors && hasErrors)}>
-            {saving ? <Spinner /> : <Save size={16} />} Crear tabla
+            {saving ? <Spinner /> : <Save size={16} />} {mongo ? 'Crear colección' : 'Crear tabla'}
           </button>
         </div>
       </div>
@@ -589,7 +591,7 @@ export default function CreateTablePage() {
       >
         <p className="muted" style={{ marginTop: 0 }}>
           Se leerán los documentos para proponer el nombre y los campos clave (<span className="code-inline">_id</span> si todos lo traen).
-          Al pulsar <strong>Crear tabla</strong> se crea la colección y se cargan estos datos. Acepta JSON (arreglo, documento o
+          Al pulsar <strong>Crear colección</strong> se crea la colección y se cargan estos datos. Acepta JSON (arreglo, documento o
           {' '}<span className="code-inline">{'{ "documents": [ … ] }'}</span>, con <span className="code-inline">{'{"$oid"}'}</span> / <span className="code-inline">{'{"$date"}'}</span>), NDJSON, BSON (mongodump), Excel y CSV.
         </p>
         {detectError && <div className="field"><Alert type="error">{detectError}</Alert></div>}

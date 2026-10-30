@@ -1,6 +1,6 @@
 # Data Hub
 
-Administración de información por **categorías** (la primera es **RPAs**). Cada categoría contiene tablas que se crean desde el frontend, se alimentan con archivos Excel (`.xlsx` / `.xls`), CSV (`.csv`) o por HTTP, y se consultan desde otras aplicaciones. Cada tabla se guarda en **MySQL** (columnas y tipos definidos) o, si se configura, en **MongoDB** (documentos JSON libres; ver [Tablas MongoDB](#tablas-mongodb)).
+Administración de información por **categorías** (la primera es **RPAs**). Cada categoría contiene tablas (MySQL) y colecciones (MongoDB) que se crean desde el frontend, se alimentan con archivos Excel (`.xlsx` / `.xls`), CSV (`.csv`) o por HTTP, y se consultan desde otras aplicaciones. Las tablas viven en **MySQL** (columnas y tipos definidos); si se configura, también se pueden crear **colecciones MongoDB** (documentos JSON libres; ver [Colecciones MongoDB](#colecciones-mongodb)).
 
 Stack: **Express 5 + React 18 (Vite) + Node.js + MySQL 8** (+ MongoDB opcional).
 
@@ -8,7 +8,7 @@ Stack: **Express 5 + React 18 (Vite) + Node.js + MySQL 8** (+ MongoDB opcional).
 
 - Node.js 20 o superior
 - Servidor MySQL 8 (o MariaDB 10.6+) accesible
-- Opcional: servidor MongoDB 5+ accesible, para crear tablas MongoDB
+- Opcional: servidor MongoDB 5+ accesible, para crear colecciones MongoDB
 
 ## Despliegue en un equipo (producción)
 
@@ -125,9 +125,9 @@ ALTER TABLE ordenes
   RENAME COLUMN monto TO total;
 ```
 
-## Tablas MongoDB
+## Colecciones MongoDB
 
-Opcional. Con `MONGO_URI` en `backend/.env` (p. ej. `mongodb://127.0.0.1:27017`) y reiniciando la app, al crear una tabla se puede elegir **MongoDB** en *Base de datos*. Sin `MONGO_URI` la opción aparece deshabilitada y todo funciona solo con MySQL. Los metadatos (categorías, tablas, historial) siempre viven en MySQL; los documentos van a la base `MONGO_DB` (por defecto `data_hub`). Los instaladores no instalan MongoDB: instálalo aparte (servicio de Windows o `mongod` en Linux) o usa un servidor existente.
+Opcional. Con `MONGO_URI` en `backend/.env` (p. ej. `mongodb://127.0.0.1:27017`) y reiniciando la app, en *Nueva tabla o colección* se puede elegir **MongoDB** en *Base de datos*. Sin `MONGO_URI` la opción aparece deshabilitada y todo funciona solo con MySQL. Los metadatos (categorías, tablas, historial) siempre viven en MySQL; los documentos van a la base `MONGO_DB` (por defecto `data_hub`). Los instaladores no instalan MongoDB: instálalo aparte (servicio de Windows o `mongod` en Linux) o usa un servidor existente.
 
 - **Sin columnas**: cada documento puede tener su propia estructura (objetos anidados, arreglos). La colección se llama igual que una tabla MySQL (`dh_<categoria>[_<aplicacion>]_<tabla>`) y cada documento lleva `_id`, `_created_at` y `_updated_at`.
 - **Campos clave opcionales** (máx. 5, con punto para anidados: `cliente.id`): con clave se hace upsert (si existe, se actualizan los campos enviados y se conservan los demás); sin clave, cada carga inserta. Se cambian en *Estructura* (se reconstruye el índice único; si hay duplicados se rechaza).

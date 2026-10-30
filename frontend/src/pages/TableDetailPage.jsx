@@ -62,7 +62,7 @@ export default function TableDetailPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">{table.name}</h1>
-          <p className="page-subtitle">{table.description || `Tabla de ${table.application_name ?? table.category_name}`}</p>
+          <p className="page-subtitle">{table.description || `${engineOf(table).Noun} de ${table.application_name ?? table.category_name}`}</p>
           <div className="row" style={{ marginTop: 10 }}>
             <Badge color={engine.color}>{engine.label}</Badge>
             <Badge color="blue">{fmtNumber(table.row_count)} {engine.records}</Badge>

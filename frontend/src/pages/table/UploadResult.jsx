@@ -2,7 +2,8 @@ import { Alert, Badge } from '../../components/ui';
 import { fmtNumber, STATUS } from '../../utils/format';
 
 /** Resultado de una carga (Excel o API): métricas, avisos y errores por fila. */
-export default function UploadResult({ result }) {
+/** mongo: textos de documentos/campos en lugar de filas/columnas. */
+export default function UploadResult({ result, mongo = false }) {
   const status = STATUS[result.status] ?? STATUS.error;
   const errors = result.errors ?? [];
   const errorCount = result.error_count ?? errors.length;
@@ -15,10 +16,10 @@ export default function UploadResult({ result }) {
       {(result.total !== undefined || result.rows_total !== undefined) && (
         <div className="grid grid-metrics">
           {[
-            ['Filas leídas', result.total ?? result.rows_total],
-            ['Insertadas', result.inserted],
-            ['Actualizadas', result.updated],
-            ['Rechazadas', result.failed],
+            [mongo ? 'Documentos leídos' : 'Filas leídas', result.total ?? result.rows_total],
+            [mongo ? 'Insertados' : 'Insertadas', result.inserted],
+            [mongo ? 'Actualizados' : 'Actualizadas', result.updated],
+            [mongo ? 'Rechazados' : 'Rechazadas', result.failed],
           ].map(([label, value]) => (
             <div key={label} className="glass metric-card" style={{ padding: '14px 16px' }}>
               <div className="metric-value" style={{ fontSize: '1.4rem' }}>{fmtNumber(value)}</div>
@@ -27,7 +28,11 @@ export default function UploadResult({ result }) {
           ))}
         </div>
       )}
-      {result.db_error && <Alert type="error">Error de base de datos (no se guardó ninguna fila): {result.db_error}</Alert>}
+      {result.db_error && (
+        <Alert type="error">
+          {mongo ? 'Error de MongoDB (la carga se detuvo en ese documento)' : 'Error de base de datos (no se guardó ninguna fila)'}: {result.db_error}
+        </Alert>
+      )}
       {result.warnings?.map((w) => <Alert key={w} type="warning">{w}</Alert>)}
       {errors.length > 0 && (
         <div className="glass">
@@ -38,7 +43,7 @@ export default function UploadResult({ result }) {
           </div>
           <div className="table-wrap" style={{ maxHeight: 360 }}>
             <table>
-              <thead><tr><th className="num">Fila</th><th>Columna</th><th>Valor</th><th>Problema</th></tr></thead>
+              <thead><tr><th className="num">{mongo ? 'Documento' : 'Fila'}</th><th>{mongo ? 'Campo' : 'Columna'}</th><th>Valor</th><th>Problema</th></tr></thead>
               <tbody>
                 {errors.map((e, i) => (
                   <tr key={i}>

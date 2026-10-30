@@ -6,11 +6,13 @@ import { useApp } from '../context/AppContext';
 import { Loading, EmptyState, Alert, CategoryIcon } from '../components/ui';
 import CategoryFormModal from '../components/CategoryFormModal';
 import TableCards from '../components/TableCards';
+import { collectionLabels } from '../utils/format';
 
 export default function CategoryPage() {
   const { categorySlug } = useParams();
   const navigate = useNavigate();
   const { health, refreshCategories, toast } = useApp();
+  const labels = collectionLabels(health?.mongo?.enabled);
   const [category, setCategory] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -64,17 +66,17 @@ export default function CategoryPage() {
             <button type="button" className="btn-ghost" onClick={remove}><Trash2 size={15} /> Eliminar</button>
           )}
           <button type="button" className="btn-secondary" onClick={() => setCreatingApp(true)}><AppWindow size={16} /> Nueva aplicación</button>
-          <Link to={`/c/${category.slug}/new`} className="btn-primary"><Plus size={16} /> Nueva tabla</Link>
+          <Link to={`/c/${category.slug}/new`} className="btn-primary"><Plus size={16} /> {labels.newItem}</Link>
         </div>
       </div>
 
       {empty ? (
         <div className="glass">
           <EmptyState
-            icon={Table2} title="Esta categoría aún no tiene tablas"
-            action={<Link to={`/c/${category.slug}/new`} className="btn-primary"><Plus size={16} /> Crear tabla</Link>}
+            icon={Table2} title={`Esta categoría aún no tiene ${labels.none}`}
+            action={<Link to={`/c/${category.slug}/new`} className="btn-primary"><Plus size={16} /> {labels.create}</Link>}
           >
-            Crea una tabla directamente en la categoría, o agrúpalas por aplicación con “Nueva aplicación”.
+            Crea {labels.one === 'tabla' ? 'una tabla' : 'una tabla o colección'} directamente en la categoría, o agrúpalas por aplicación con “Nueva aplicación”.
           </EmptyState>
         </div>
       ) : (
@@ -97,7 +99,7 @@ export default function CategoryPage() {
                     </div>
                     {a.description && <div className="muted small">{a.description}</div>}
                     <div className="table-card-meta">
-                      <span><strong>{a.table_count}</strong> {Number(a.table_count) === 1 ? 'tabla' : 'tablas'}</span>
+                      <span><strong>{a.table_count}</strong> {Number(a.table_count) === 1 ? labels.one : labels.many}</span>
                     </div>
                   </div>
                 ))}
@@ -106,7 +108,7 @@ export default function CategoryPage() {
           )}
           {category.tables.length > 0 && (
             <div>
-              {category.applications.length > 0 && <p className="section-title">Tablas</p>}
+              {category.applications.length > 0 && <p className="section-title">{labels.plural}</p>}
               <TableCards tables={category.tables} />
             </div>
           )}

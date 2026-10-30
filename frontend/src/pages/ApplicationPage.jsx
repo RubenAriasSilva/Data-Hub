@@ -6,7 +6,7 @@ import { useApp } from '../context/AppContext';
 import { Loading, EmptyState, Alert, FileDropzone, Spinner } from '../components/ui';
 import CategoryFormModal from '../components/CategoryFormModal';
 import TableCards from '../components/TableCards';
-import { fmtDateTime } from '../utils/format';
+import { fmtDateTime, collectionLabels } from '../utils/format';
 
 const README_ACCEPT = '.md,.markdown,.txt';
 // La librería de Markdown solo se descarga al abrir la documentación
@@ -99,6 +99,7 @@ export default function ApplicationPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { health, refreshCategories, toast } = useApp();
+  const labels = collectionLabels(health?.mongo?.enabled);
   const [app, setApp] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -150,13 +151,13 @@ export default function ApplicationPage() {
           {app.tables.length === 0 && (
             <button type="button" className="btn-ghost" onClick={remove}><Trash2 size={15} /> Eliminar</button>
           )}
-          <Link to={`${base}/new`} className="btn-primary"><Plus size={16} /> Nueva tabla</Link>
+          <Link to={`${base}/new`} className="btn-primary"><Plus size={16} /> {labels.newItem}</Link>
         </div>
       </div>
 
       <div className="glass tabs">
         <button type="button" className={`tab${tab === 'tables' ? ' active' : ''}`} onClick={() => setParams({})}>
-          <Table2 size={15} /> Tablas ({app.tables.length})
+          <Table2 size={15} /> {labels.plural} ({app.tables.length})
         </button>
         <button type="button" className={`tab${tab === 'docs' ? ' active' : ''}`} onClick={() => setParams({ tab: 'docs' })}>
           <BookOpen size={15} /> Documentación
@@ -168,10 +169,12 @@ export default function ApplicationPage() {
         {tab === 'tables' && (app.tables.length === 0 ? (
           <div className="glass">
             <EmptyState
-              icon={Table2} title="Esta aplicación aún no tiene tablas"
-              action={<Link to={`${base}/new`} className="btn-primary"><Plus size={16} /> Crear tabla</Link>}
+              icon={Table2} title={`Esta aplicación aún no tiene ${labels.none}`}
+              action={<Link to={`${base}/new`} className="btn-primary"><Plus size={16} /> {labels.create}</Link>}
             >
-              Crea una tabla definiendo sus columnas, escribiendo SQL o detectándolas a partir de un Excel de ejemplo.
+              {labels.one === 'tabla'
+                ? 'Crea una tabla definiendo sus columnas, escribiendo SQL o detectándolas a partir de un Excel de ejemplo.'
+                : 'Crea una tabla MySQL (columnas, SQL o Excel de ejemplo) o una colección MongoDB (formulario, código mongosh o archivo de datos).'}
             </EmptyState>
           </div>
         ) : (

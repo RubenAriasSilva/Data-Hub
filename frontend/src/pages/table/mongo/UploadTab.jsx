@@ -136,7 +136,7 @@ export default function MongoUploadTab({ table, onUploaded }) {
           </div>
         </div>
         {error && <Alert type="error">{error}</Alert>}
-        {result && <UploadResult result={result} />}
+        {result && <UploadResult result={result} mongo />}
       </div>
 
       <div className="glass card-pad">
