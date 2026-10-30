@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X, Copy, Check, UploadCloud, Bot, Folder, Database, Factory, Boxes, Cpu, Truck, Wrench,
   ShieldCheck, Users, Package, FileSpreadsheet, AlertCircle, AlertTriangle, CheckCircle2, Info,
@@ -21,7 +22,9 @@ export function Modal({ open, title, onClose, children, footer, width = 520 }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  // Portal a <body>: dentro de una tarjeta .glass (backdrop-filter) el position: fixed quedaría
+  // relativo a la tarjeta y la ventana aparecería atrapada y tapada por las tarjetas siguientes.
+  return createPortal(
     <div className="modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
       <div className="glass-strong modal" style={{ maxWidth: width }} role="dialog" aria-modal="true">
         <div className="modal-head">
@@ -31,7 +34,8 @@ export function Modal({ open, title, onClose, children, footer, width = 520 }) {
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
