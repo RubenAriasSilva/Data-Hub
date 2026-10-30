@@ -5,6 +5,7 @@ import { api } from '../../../api/client';
 import { useApp } from '../../../context/AppContext';
 import { Badge, Modal, Alert, Spinner, Loading } from '../../../components/ui';
 import { FIELD_PATH_RE, parentPath } from '../../../utils/format';
+import IndexesSection from './IndexesSection';
 
 const MAX_KEY_FIELDS = 5;
 
@@ -152,6 +153,8 @@ export default function MongoStructureTab({ table, onChanged }) {
         </div>
         {keyError && <div className="field-error">{keyError}</div>}
       </div>
+
+      <IndexesSection table={table} onChanged={onChanged} />
 
       <div className="glass">
         <div className="card-pad" style={{ paddingBottom: 8 }}>

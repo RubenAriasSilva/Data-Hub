@@ -6,8 +6,13 @@ import { mongoEnabled } from '../config/mongo.js';
 import {
   validateKeyFields, createCollection, dropCollection, clearCollection, setKeyFields, queryDocuments,
   getDocument, replaceDocument, deleteDocument, inferFields, allDocuments, toJson,
+  describeFields, listIndexes, dropIndex, applyIndexes,
 } from '../services/mongoService.js';
-import { importMongoFile, importMongoJson } from '../services/mongoImportService.js';
+import {
+  importMongoFile, importMongoJson, importDocuments, documentsFromFile,
+} from '../services/mongoImportService.js';
+import { parseMongoScript } from '../services/mongoScriptService.js';
+import { getMongoDb } from '../config/mongo.js';
 import {
   validateColumns, buildCreateTableSql, dropTableSql, truncateTableSql,
 } from '../services/schemaService.js';
@@ -56,6 +61,33 @@ router.post('/sql/parse', async (req, res) => {
   res.json(parseCreateTable(req.body?.sql));
 });
 
+/** Resumen de un código mongosh para mostrarlo antes de aplicarlo. */
+const scriptSummary = (parsed) => ({
+  collection: parsed.collection,
+  plan: parsed.plan,
+  warnings: parsed.warnings,
+  document_count: parsed.documentCount,
+  index_count: parsed.steps.filter((s) => s.kind === 'index').length,
+  suggested_keys: parsed.suggestedKeys,
+});
+
+// Código mongosh (createCollection, createIndex, insertMany…) -> resumen para revisar antes de crear
+router.post('/mongo/parse', async (req, res) => {
+  res.json(scriptSummary(parseMongoScript(req.body?.script, { mode: 'create' })));
+});
+
+// Archivo de datos (JSON, NDJSON, BSON, Excel, CSV) -> documentos, campos y claves sugeridas, sin guardar
+router.post('/mongo/detect', dataUpload, async (req, res) => {
+  const { items, source } = documentsFromFile(req.file, req.body?.sheet_name || null);
+  const docs = items.map((i) => i.doc);
+  res.json({
+    source,
+    count: docs.length,
+    fields: describeFields(docs.slice(0, 500)),
+    suggested_keys: docs.length && docs.every((d) => d._id !== undefined) ? ['_id'] : [],
+  });
+});
+
 router.post('/', async (req, res) => {
   const body = req.body ?? {};
   const dbType = body.db_type || 'mysql';
@@ -84,6 +116,8 @@ router.post('/', async (req, res) => {
   const mongo = dbType === 'mongodb';
   const keyFields = mongo ? validateKeyFields(body.key_fields) : null;
   const columns = mongo ? [] : validateColumns(body.columns);
+  // Código mongosh opcional: opciones de la colección, índices y documentos iniciales
+  const script = mongo && String(body.script ?? '').trim() ? parseMongoScript(body.script, { mode: 'create' }) : null;
   const dbTable = `${prefix}${slug}`;
   const parentName = application ? `la aplicación ${application.name}` : `la categoría ${category.name}`;
 
@@ -96,7 +130,12 @@ router.post('/', async (req, res) => {
 
   // El DDL hace commit implícito en MySQL: primero se crea la tabla física (o la colección) y,
   // si fallan los metadatos, se elimina para no dejar basura.
-  if (mongo) await createCollection(dbTable, keyFields);
+  if (mongo) {
+    await createCollection(dbTable, keyFields, {
+      options: script?.options,
+      indexes: script?.steps.filter((st) => st.kind === 'index') ?? [],
+    });
+  }
   else {
     try {
       await pool.query(buildCreateTableSql(dbTable, columns));
@@ -108,6 +147,7 @@ router.post('/', async (req, res) => {
   const dropPhysical = () => (mongo ? dropCollection(dbTable) : pool.query(dropTableSql(dbTable)));
 
   const conn = await pool.getConnection();
+  let tableId;
   try {
     await conn.beginTransaction();
     const [r] = await conn.query(
@@ -125,7 +165,7 @@ router.post('/', async (req, res) => {
       );
     }
     await conn.commit();
-    res.status(201).json(await tableResponse(r.insertId));
+    tableId = r.insertId;
   } catch (err) {
     await conn.rollback();
     await dropPhysical().catch(() => {});
@@ -133,6 +173,11 @@ router.post('/', async (req, res) => {
   } finally {
     conn.release();
   }
+
+  // Documentos del código (insertOne/insertMany): la tabla ya existe, así que un fallo solo se informa
+  const docs = script?.steps.filter((st) => st.kind === 'insert').flatMap((st) => st.documents) ?? [];
+  const initialLoad = docs.length ? await importDocuments(await getTableMetaById(tableId), docs) : null;
+  res.status(201).json({ ...await tableResponse(tableId), initial_load: initialLoad });
 });
 
 router.get('/:id', async (req, res) => {
@@ -308,6 +353,39 @@ router.delete('/:id/documents/:docId', async (req, res) => {
 router.get('/:id/fields', async (req, res) => {
   const meta = await metaFor(req.params.id, 'mongodb');
   res.json(await inferFields(meta));
+});
+
+router.get('/:id/indexes', async (req, res) => {
+  res.json(await listIndexes(await metaFor(req.params.id, 'mongodb')));
+});
+
+router.delete('/:id/indexes/:name', async (req, res) => {
+  await dropIndex(await metaFor(req.params.id, 'mongodb'), req.params.name);
+  res.status(204).end();
+});
+
+// Código mongosh sobre la colección existente: createIndex, dropIndex, insertOne/insertMany.
+// Con dryRun solo valida y devuelve el plan. Los pasos se aplican en orden; si uno falla, se informa cuántos se aplicaron.
+router.post('/:id/script', async (req, res) => {
+  const meta = await metaFor(req.params.id, 'mongodb');
+  const parsed = parseMongoScript(req.body?.script, { mode: 'alter' });
+  const plan = parsed.plan;
+  if (req.body?.dryRun || !parsed.steps.length) return res.json({ plan, warnings: parsed.warnings, applied: 0 });
+
+  const coll = getMongoDb().collection(meta.table.db_table);
+  const loads = [];
+  for (const [i, step] of parsed.steps.entries()) {
+    try {
+      if (step.kind === 'index') await applyIndexes(coll, [step]);
+      else if (step.kind === 'dropIndex') await dropIndex(meta, step.target);
+      else loads.push(await importDocuments(meta, step.documents));
+    } catch (err) {
+      if (!(err instanceof HttpError)) throw err;
+      const done = i ? ` Se aplicaron los ${i} pasos anteriores.` : ' No se aplicó ningún cambio.';
+      throw new HttpError(err.status, `Paso ${i + 1} (${plan[i]}): ${err.message.replace(/^Índice 1 \([^)]*\): /, '')}${done}`, { plan, applied: i });
+    }
+  }
+  res.json({ plan, warnings: parsed.warnings, applied: parsed.steps.length, loads });
 });
 
 // Cambiar los campos clave (reconstruye el índice único)

@@ -139,27 +139,29 @@ export function importMongoJson(meta, body, { source = 'api', filename = null } 
   return run(meta, numbered(docs), { source, filename, startedAt });
 }
 
-/** Archivo subido: .json, .ndjson/.jsonl, .bson, .csv o Excel. */
-export function importMongoFile(meta, file) {
+/** Documentos ya interpretados (p. ej. los insertMany de un código mongosh). */
+export function importDocuments(meta, docs, { source = 'script', filename = null } = {}) {
+  return run(meta, numbered(docs), { source, filename, startedAt: Date.now() });
+}
+
+/**
+ * Lee un archivo .json, .ndjson/.jsonl, .bson, .csv o Excel sin guardarlo.
+ * Devuelve { items: [{ rowNumber, doc }], source }.
+ */
+export function documentsFromFile(file, sheetName = null) {
   if (!file) throw new HttpError(400, 'Adjunta un archivo JSON, NDJSON, BSON, Excel o CSV en el campo "file"');
-  const startedAt = Date.now();
   const name = file.originalname;
   const lower = name.toLowerCase();
   const text = () => file.buffer.toString('utf8').replace(/^﻿/, '');
-  let items;
-  let source;
-  if (lower.endsWith('.json')) {
-    items = numbered(documentsFromBody(parseEjson(text(), name)));
-    source = 'json';
-  } else if (lower.endsWith('.ndjson') || lower.endsWith('.jsonl')) {
-    items = numbered(parseNdjson(text(), name));
-    source = 'ndjson';
-  } else if (lower.endsWith('.bson')) {
-    items = numbered(parseBson(file.buffer, name));
-    source = 'bson';
-  } else {
-    items = documentsFromSheet(parseSheet(file.buffer, meta.table.sheet_name, name));
-    source = isCsv(name) ? 'csv' : 'excel';
-  }
-  return run(meta, items, { source, filename: name, startedAt });
+  if (lower.endsWith('.json')) return { items: numbered(documentsFromBody(parseEjson(text(), name))), source: 'json' };
+  if (lower.endsWith('.ndjson') || lower.endsWith('.jsonl')) return { items: numbered(parseNdjson(text(), name)), source: 'ndjson' };
+  if (lower.endsWith('.bson')) return { items: numbered(parseBson(file.buffer, name)), source: 'bson' };
+  return { items: documentsFromSheet(parseSheet(file.buffer, sheetName, name)), source: isCsv(name) ? 'csv' : 'excel' };
+}
+
+/** Archivo subido: .json, .ndjson/.jsonl, .bson, .csv o Excel. */
+export function importMongoFile(meta, file) {
+  const startedAt = Date.now();
+  const { items, source } = documentsFromFile(file, meta.table.sheet_name);
+  return run(meta, items, { source, filename: file.originalname, startedAt });
 }

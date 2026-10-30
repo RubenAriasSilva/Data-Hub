@@ -10,6 +10,10 @@ const KEY_FIELD_RE = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 // Operadores que ejecutan JavaScript en el servidor
 const FORBIDDEN_OPERATORS = new Set(['$where', '$function', '$accumulator']);
 const UNIQUE_INDEX = 'uk_upsert';
+// Índices que administra el Data Hub (no se eliminan desde la pestaña Estructura)
+const SYSTEM_INDEXES = new Set(['_id_', UNIQUE_INDEX, 'idx_updated_at']);
+// Campos de collation válidos en una operación (el índice devuelve además "version")
+const COLLATION_FIELDS = ['locale', 'caseLevel', 'caseFirst', 'strength', 'numericOrdering', 'alternate', 'maxVariable', 'normalization', 'backwards'];
 
 const collection = (meta) => getMongoDb().collection(meta.table.db_table);
 
@@ -66,7 +70,7 @@ export function getPath(doc, path) {
   return path.split('.').reduce((node, part) => (node === null || node === undefined ? undefined : node[part]), doc);
 }
 
-function assertSafeQuery(value, where) {
+export function assertSafeQuery(value, where) {
   if (Array.isArray(value)) value.forEach((v) => assertSafeQuery(v, where));
   else if (isPlainObject(value)) {
     for (const [k, v] of Object.entries(value)) {
@@ -105,19 +109,87 @@ export const toJson = (doc) => EJSON.serialize(doc, { relaxed: true });
 
 // ── Colecciones ─────────────────────────────────────────────────────────────
 
+const sameFields = (a, b) => a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|');
+
+/** Índice único existente con exactamente los campos clave (ascendente o descendente), o null. */
+export async function findKeyIndex(coll, keys) {
+  if (!keys.length || keys[0] === '_id') return null;
+  const indexes = await coll.listIndexes().toArray();
+  return indexes.find((ix) => ix.unique && sameFields(Object.keys(ix.key), keys)
+    && Object.values(ix.key).every((v) => v === 1 || v === -1)) ?? null;
+}
+
+/** Crea uk_upsert salvo que ya exista un índice único sobre las claves (p. ej. uno creado con código y collation). */
 async function ensureKeyIndex(coll, keys) {
-  if (!keys.length || keys[0] === '_id') return;
+  if (!keys.length || keys[0] === '_id' || await findKeyIndex(coll, keys)) return;
   await coll.createIndex(Object.fromEntries(keys.map((k) => [k, 1])), { name: UNIQUE_INDEX, unique: true });
 }
 
-export async function createCollection(name, keys) {
+const keyDescription = (key) => Object.entries(key).map(([k, v]) => `${k}: ${v}`).join(', ');
+
+/** Crea los índices en orden; el error indica cuál falló. */
+export async function applyIndexes(coll, indexes) {
+  for (const [i, { key, options }] of indexes.entries()) {
+    try {
+      await coll.createIndex(key, options);
+    } catch (err) {
+      const reason = err.code === 11000 ? 'hay documentos repetidos para este índice único' : err.message;
+      throw new HttpError(400, `Índice ${i + 1} ({ ${keyDescription(key)} }): ${reason}`);
+    }
+  }
+}
+
+/**
+ * Crea la colección con sus opciones e índices (código mongosh) más los del Data Hub.
+ * Si algo falla, la colección se elimina para no dejarla a medias.
+ */
+export async function createCollection(name, keys, { options = {}, indexes = [] } = {}) {
   const db = getMongoDb();
   if (await db.listCollections({ name }, { nameOnly: true }).hasNext()) {
     throw new HttpError(409, `La colección ${name} ya existe en MongoDB`);
   }
-  const coll = await db.createCollection(name);
-  await ensureKeyIndex(coll, keys);
-  await coll.createIndex({ _updated_at: 1 }, { name: 'idx_updated_at' });
+  let coll;
+  try {
+    coll = await db.createCollection(name, options);
+  } catch (err) {
+    throw new HttpError(400, `MongoDB rechazó la colección: ${err.message}`);
+  }
+  try {
+    await applyIndexes(coll, indexes);
+    await ensureKeyIndex(coll, keys);
+    await coll.createIndex({ _updated_at: 1 }, { name: 'idx_updated_at' });
+  } catch (err) {
+    await coll.drop().catch(() => {});
+    throw err;
+  }
+}
+
+/** Índices de la colección, marcando los del sistema y el que respalda los campos clave. */
+export async function listIndexes(meta) {
+  const coll = collection(meta);
+  const [indexes, keyIndex] = await Promise.all([coll.listIndexes().toArray(), findKeyIndex(coll, meta.keyFields)]);
+  return indexes.map((ix) => ({
+    ...toJson(ix),
+    system: SYSTEM_INDEXES.has(ix.name),
+    key_index: ix.name === keyIndex?.name,
+  }));
+}
+
+/** Elimina un índice por nombre o por sus campos; no permite los del sistema ni el de las claves. */
+export async function dropIndex(meta, target) {
+  const coll = collection(meta);
+  const indexes = await coll.listIndexes().toArray();
+  const ix = typeof target === 'string'
+    ? indexes.find((i) => i.name === target)
+    : indexes.find((i) => JSON.stringify(i.key) === JSON.stringify(target));
+  const label = typeof target === 'string' ? `"${target}"` : `{ ${keyDescription(target)} }`;
+  if (!ix) throw new HttpError(404, `No existe el índice ${label}`);
+  if (SYSTEM_INDEXES.has(ix.name)) throw new HttpError(400, `El índice "${ix.name}" lo administra el Data Hub`);
+  if (ix.name === (await findKeyIndex(coll, meta.keyFields))?.name) {
+    throw new HttpError(400, `El índice "${ix.name}" respalda los campos clave (${meta.keyFields.join(', ')}): cambia las claves antes de eliminarlo`);
+  }
+  await coll.dropIndex(ix.name);
+  return ix.name;
 }
 
 export async function dropCollection(name) {
@@ -186,6 +258,12 @@ export async function upsertDocuments(meta, docs) {
   let inserted = 0;
   let updated = 0;
   const coll = collection(meta);
+  // Si el índice de las claves tiene collation (p. ej. sin distinguir mayúsculas), el upsert compara igual que él
+  const keyIndex = await findKeyIndex(coll, keys);
+  if (keyIndex?.collation) {
+    const collation = Object.fromEntries(COLLATION_FIELDS.filter((f) => f in keyIndex.collation).map((f) => [f, keyIndex.collation[f]]));
+    for (const op of ops) if (op.updateOne) op.updateOne.collation = collation;
+  }
   for (let i = 0; i < ops.length; i += BATCH_SIZE) {
     // ordered: un error detiene la carga en ese documento (como la transacción de MySQL, aunque sin revertir lotes previos)
     const res = await coll.bulkWrite(ops.slice(i, i + BATCH_SIZE), { ordered: true });
@@ -344,9 +422,13 @@ const bsonType = (v) => {
   return typeof v;
 };
 
-/** Campos presentes en una muestra: [{ path, types, count, percent }], ordenados por ruta. */
+/** Campos de una muestra: [{ path, types, count, percent }], ordenados por ruta. */
 export async function inferFields(meta, sample = 200) {
-  const docs = await collection(meta).aggregate([{ $sample: { size: sample } }]).toArray();
+  return describeFields(await collection(meta).aggregate([{ $sample: { size: sample } }]).toArray());
+}
+
+/** Campos presentes en documentos ya leídos (también los de un archivo que aún no se guarda). */
+export function describeFields(docs) {
   const fields = new Map();
   const visit = (node, prefix) => {
     for (const [k, v] of Object.entries(node)) {

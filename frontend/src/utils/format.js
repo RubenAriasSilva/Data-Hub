@@ -73,6 +73,7 @@ export const SOURCES = {
   json: { label: 'JSON', color: 'blue' },
   ndjson: { label: 'NDJSON', color: 'blue' },
   bson: { label: 'BSON', color: 'green' },
+  script: { label: 'Código', color: 'green' },
   api: { label: 'API', color: 'blue' },
 };
 

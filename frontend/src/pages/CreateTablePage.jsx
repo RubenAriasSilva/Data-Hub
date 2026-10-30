@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, ArrowUp, ArrowDown, Wand2, Code2, Save, Key, TableProperties, FileCode2, Database, Leaf, X } from 'lucide-react';
+import { Plus, Trash2, ArrowUp, ArrowDown, Wand2, Code2, Save, Key, TableProperties, FileCode2, Database, Leaf, X, FileUp, Terminal, FileJson } from 'lucide-react';
 import { api } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { Alert, Modal, FileDropzone, Spinner, CodeBlock } from '../components/ui';
@@ -13,6 +13,17 @@ const newColumn = (data = {}) => ({
 
 const MAX_DB_NAME = 64; // límite de MySQL para nombres de tabla (también se aplica a las colecciones)
 const MAX_KEY_FIELDS = 5;
+
+const MONGO_EXAMPLE = `// Código mongosh: se interpreta, no se ejecuta. Una sola colección.
+db.createCollection("users");
+db.users.createIndex({ name: 1 }, { unique: true, collation: { locale: "es", strength: 1 } });
+db.users.createIndex({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: "string" } } });
+
+// Opcional: documentos iniciales
+db.users.insertMany([
+  { name: "Juan Pérez", email: "juan.perez@empresa.com", role: "admin", createdAt: ISODate("2026-10-01T00:00:00Z") }
+]);`;
+const DATA_ACCEPT = '.json,.ndjson,.jsonl,.bson,.xlsx,.xls,.csv';
 
 const SQL_EXAMPLE = `CREATE TABLE ordenes (
   orden BIGINT NOT NULL COMMENT 'Orden',
@@ -77,6 +88,13 @@ export default function CreateTablePage() {
   const [keyFields, setKeyFields] = useState([]);
   const [keyInput, setKeyInput] = useState('');
   const mongo = engine === 'mongodb';
+  const [mongoMode, setMongoMode] = useState('form'); // 'form' | 'code'
+  const [scriptText, setScriptText] = useState(MONGO_EXAMPLE);
+  const [script, setScript] = useState(null); // { text, summary } código interpretado que se aplicará al crear
+  const [dataOpen, setDataOpen] = useState(false);
+  const [dataFile, setDataFile] = useState(null); // archivo elegido en el modal
+  const [initialData, setInitialData] = useState(null); // { file, info } datos que se cargarán al crear
+  const scriptInput = useRef(null);
 
   useEffect(() => {
     if (!appSlug) return;
@@ -164,6 +182,57 @@ export default function CreateTablePage() {
     }
   };
 
+  // Código mongosh: el backend lo interpreta (sin ejecutarlo) y se revisa antes de crear
+  const parseScript = async () => {
+    setParsing(true);
+    setError(null);
+    try {
+      const summary = await api.post('/tables/mongo/parse', { script: scriptText });
+      setScript({ text: scriptText, summary });
+      if (!info.name.trim()) setInfoField('name', summary.collection);
+      if (!keyFields.length && summary.suggested_keys.length) setKeyFields(summary.suggested_keys);
+      setMongoMode('form');
+      toast(`Código interpretado: ${summary.index_count} índice(s), ${summary.document_count} documento(s). Revisa y pulsa "Crear tabla".`, 'info');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const loadScriptFile = async (file) => {
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      setError('El archivo de código excede 20 MB');
+      return;
+    }
+    setScriptText(await file.text());
+    setScript(null);
+  };
+
+  // Archivo de datos: se lee en el backend (sin guardar) para proponer nombre y claves
+  const runDataDetect = async () => {
+    if (!dataFile) return;
+    setDetecting(true);
+    setDetectError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', dataFile);
+      if (info.sheet_name) fd.append('sheet_name', info.sheet_name);
+      const res = await api.post('/tables/mongo/detect', fd);
+      setInitialData({ file: dataFile, info: res });
+      if (!info.name.trim()) setInfoField('name', dataFile.name.replace(/\.[^.]+$/, ''));
+      if (!keyFields.length && res.suggested_keys.length) setKeyFields(res.suggested_keys);
+      toast(`${res.count} documentos leídos de ${dataFile.name}; se cargarán al crear la colección`, 'info');
+      setDataOpen(false);
+      setDataFile(null);
+    } catch (err) {
+      setDetectError(err.message);
+    } finally {
+      setDetecting(false);
+    }
+  };
+
   const submit = async () => {
     setShowErrors(true);
     if (!category) {
@@ -184,7 +253,7 @@ export default function CreateTablePage() {
         ...info,
         db_type: engine,
         ...(mongo
-          ? { key_fields: keyFields }
+          ? { key_fields: keyFields, script: script?.text }
           : {
             columns: columns.map(({ excel_name, db_name, data_type, is_key, nullable }) => ({
               excel_name: excel_name.trim(), db_name, data_type, is_key, nullable,
@@ -193,6 +262,19 @@ export default function CreateTablePage() {
       });
       await refreshCategories();
       toast(`Tabla "${created.name}" creada`);
+      const loaded = (r) => `${r.inserted} nuevos, ${r.updated} actualizados${r.failed ? `, ${r.failed} rechazados` : ''}`;
+      if (created.initial_load) toast(`Documentos del código: ${loaded(created.initial_load)}`, created.initial_load.status === 'success' ? 'success' : 'info');
+      if (mongo && initialData) {
+        // La colección ya existe: si la carga falla se informa y el detalle queda en el Historial
+        const fd = new FormData();
+        fd.append('file', initialData.file);
+        try {
+          const r = await api.post(`/tables/${created.id}/upload`, fd);
+          toast(`${initialData.file.name}: ${loaded(r)}`, r.status === 'success' ? 'success' : 'info');
+        } catch (err) {
+          toast(`${initialData.file.name}: ${err.data?.status ? loaded(err.data) : err.message}`, 'error');
+        }
+      }
       navigate(`${basePath}/t/${created.slug}`);
     } catch (err) {
       setError(err.message);
@@ -216,6 +298,7 @@ export default function CreateTablePage() {
         </div>
         <div className="row">
           {!mongo && <button type="button" className="btn-secondary" onClick={() => setDetectOpen(true)}><Wand2 size={16} /> Detectar desde Excel</button>}
+          {mongo && <button type="button" className="btn-secondary" onClick={() => { setDetectError(null); setDataOpen(true); }}><FileUp size={16} /> Crear desde archivo</button>}
           <button type="button" className="btn-primary" onClick={submit} disabled={saving || (showErrors && hasErrors)}>
             {saving ? <Spinner /> : <Save size={16} />} Crear tabla
           </button>
@@ -278,6 +361,69 @@ export default function CreateTablePage() {
         </div>
 
         {mongo && (
+          <div className="tabs glass" style={{ marginBottom: 0 }}>
+            <button type="button" className={`tab${mongoMode === 'form' ? ' active' : ''}`} onClick={() => setMongoMode('form')}>
+              <TableProperties size={15} /> Formulario
+            </button>
+            <button type="button" className={`tab${mongoMode === 'code' ? ' active' : ''}`} onClick={() => setMongoMode('code')}>
+              <Terminal size={15} /> Código mongosh
+            </button>
+          </div>
+        )}
+
+        {mongo && mongoMode === 'code' && (
+          <div className="glass card-pad">
+            <p className="section-title">Definir con código mongosh</p>
+            <textarea
+              className="mono" rows={16} spellCheck={false} value={scriptText}
+              onChange={(e) => setScriptText(e.target.value)} style={{ width: '100%', resize: 'vertical' }}
+            />
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              Se admiten <span className="code-inline">db.createCollection</span>, <span className="code-inline">createIndex</span> / <span className="code-inline">createIndexes</span> (unique, collation, partialFilterExpression, sparse, TTL…)
+              e <span className="code-inline">insertOne</span> / <span className="code-inline">insertMany</span> (con <span className="code-inline">ObjectId()</span>, <span className="code-inline">ISODate()</span> o <span className="code-inline">{'{"$oid": …}'}</span>).
+              Debe referirse a una sola colección; su nombre se usa como sugerencia, la colección real se llama <span className="code-inline">{dbTable}</span>. El código no se ejecuta: se interpreta y se valida.
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <input ref={scriptInput} type="file" accept=".js,.txt,.mongodb,.mongosh" hidden onChange={(e) => { loadScriptFile(e.target.files?.[0]); e.target.value = ''; }} />
+              <button type="button" className="btn-secondary btn-sm" onClick={() => scriptInput.current?.click()}><FileUp size={14} /> Subir archivo .js</button>
+              <div className="spacer" />
+              <button type="button" className="btn-primary" onClick={parseScript} disabled={parsing || !scriptText.trim()}>
+                {parsing ? <Spinner /> : <Code2 size={16} />} Interpretar código
+              </button>
+            </div>
+          </div>
+        )}
+
+        {mongo && mongoMode === 'form' && script && (
+          <div className="glass card-pad">
+            <div className="row">
+              <p className="section-title" style={{ margin: 0 }}><Terminal size={14} /> Código mongosh que se aplicará al crear</p>
+              <div className="spacer" />
+              <button type="button" className="btn-ghost btn-sm" onClick={() => setMongoMode('code')}>Editar</button>
+              <button type="button" className="btn-ghost btn-sm" onClick={() => setScript(null)}><X size={14} /> Quitar</button>
+            </div>
+            <ol className="small" style={{ margin: '10px 0 0', paddingLeft: 20 }}>
+              {script.summary.plan.map((step, i) => <li key={i} className="mono">{step}</li>)}
+            </ol>
+            {script.summary.warnings.map((w) => <div key={w} style={{ marginTop: 8 }}><Alert type="warning">{w}</Alert></div>)}
+          </div>
+        )}
+
+        {mongo && mongoMode === 'form' && initialData && (
+          <div className="glass card-pad">
+            <div className="row">
+              <p className="section-title" style={{ margin: 0 }}><FileJson size={14} /> Datos iniciales</p>
+              <div className="spacer" />
+              <button type="button" className="btn-ghost btn-sm" onClick={() => setInitialData(null)}><X size={14} /> Quitar</button>
+            </div>
+            <div className="muted small" style={{ marginTop: 8 }}>
+              <strong>{initialData.file.name}</strong> · {initialData.info.count} documentos · {initialData.info.fields.length} campos detectados.
+              Se cargarán justo después de crear la colección (con upsert si hay campos clave).
+            </div>
+          </div>
+        )}
+
+        {mongo && mongoMode === 'form' && (
           <div className="glass card-pad">
             <p className="section-title">Campos clave (opcional)</p>
             <p className="muted small" style={{ marginTop: 0 }}>
@@ -429,6 +575,26 @@ export default function CreateTablePage() {
           </div>
         )}
       </div>
+
+      <Modal
+        open={dataOpen} title="Crear colección desde un archivo de datos" onClose={() => setDataOpen(false)}
+        footer={(
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setDataOpen(false)}>Cancelar</button>
+            <button type="button" className="btn-primary" onClick={runDataDetect} disabled={!dataFile || detecting}>
+              {detecting ? <Spinner /> : <FileUp size={16} />} Usar archivo
+            </button>
+          </>
+        )}
+      >
+        <p className="muted" style={{ marginTop: 0 }}>
+          Se leerán los documentos para proponer el nombre y los campos clave (<span className="code-inline">_id</span> si todos lo traen).
+          Al pulsar <strong>Crear tabla</strong> se crea la colección y se cargan estos datos. Acepta JSON (arreglo, documento o
+          {' '}<span className="code-inline">{'{ "documents": [ … ] }'}</span>, con <span className="code-inline">{'{"$oid"}'}</span> / <span className="code-inline">{'{"$date"}'}</span>), NDJSON, BSON (mongodump), Excel y CSV.
+        </p>
+        {detectError && <div className="field"><Alert type="error">{detectError}</Alert></div>}
+        <FileDropzone file={dataFile} onFile={setDataFile} accept={DATA_ACCEPT} hint="Formatos: .json, .ndjson, .jsonl, .bson, .xlsx, .xls, .csv" />
+      </Modal>
 
       <Modal
         open={detectOpen} title="Detectar columnas desde Excel o CSV" onClose={() => setDetectOpen(false)}

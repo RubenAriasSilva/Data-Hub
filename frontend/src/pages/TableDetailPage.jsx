@@ -69,7 +69,7 @@ export default function TableDetailPage() {
             {mongo
               ? <Badge color="gray">{table.key_fields.length ? `Clave: ${table.key_fields.join(', ')}` : 'Sin clave (solo inserción)'}</Badge>
               : <Badge color="gray">{table.columns.length} columnas</Badge>}
-            <span className="code-inline">{table.db_table}</span>
+            <span className="code-inline" style={{ wordBreak: 'break-all' }}>{table.db_table}</span>
           </div>
         </div>
         <div className="row">

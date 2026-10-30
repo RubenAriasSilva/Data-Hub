@@ -14,7 +14,6 @@ export default function TableCards({ tables }) {
             <div className="table-card-icon"><Table2 size={18} /></div>
             <div style={{ minWidth: 0 }}>
               <div className="table-card-name">{t.name}</div>
-              <div className="mono muted small">{t.db_table}</div>
             </div>
           </div>
           {t.description && <div className="muted small">{t.description}</div>}
