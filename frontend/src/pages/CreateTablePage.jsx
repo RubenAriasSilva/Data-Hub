@@ -23,6 +23,8 @@ db.users.createIndex({ email: 1 }, { unique: true, partialFilterExpression: { em
 db.users.insertMany([
   { name: "Juan Pérez", email: "juan.perez@empresa.com", role: "admin", createdAt: ISODate("2026-10-01T00:00:00Z") }
 ]);`;
+// Código mongosh (db.…, use …), opcionalmente tras comentarios
+const MONGOSH_RE = /^\s*(?:(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/)\s*)*(?:db\s*\.|use\s+\w)/;
 const DATA_ACCEPT = '.json,.ndjson,.jsonl,.bson,.xlsx,.xls,.csv';
 
 const SQL_EXAMPLE = `CREATE TABLE ordenes (
@@ -165,6 +167,20 @@ export default function CreateTablePage() {
 
   // Modo SQL: el backend interpreta el CREATE TABLE y el resultado se revisa en el formulario
   const parseSql = async () => {
+    // Código mongosh pegado en el modo SQL: se lleva a MongoDB → Código mongosh en vez de fallar
+    if (MONGOSH_RE.test(sqlText)) {
+      if (!mongoEnabled) {
+        setError('Esto es código de MongoDB (db.…), no SQL. Para usarlo, configura MONGO_URI en backend/.env y elige MongoDB en "Base de datos".');
+        return;
+      }
+      setEngine('mongodb');
+      setScriptText(sqlText);
+      setScript(null);
+      setMongoMode('code');
+      setError(null);
+      toast('Es código de MongoDB: se cambió a MongoDB → Código mongosh. Pulsa "Interpretar código".', 'info');
+      return;
+    }
     setParsing(true);
     setError(null);
     try {

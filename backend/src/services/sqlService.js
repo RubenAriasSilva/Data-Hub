@@ -274,6 +274,10 @@ const publicColumn = (c) => ({
 
 /** CREATE TABLE -> { slug, columns, warnings } (las columnas se validan después con validateColumns). */
 export function parseCreateTable(sql) {
+  // Código mongosh pegado en el modo SQL: mensaje claro en vez de "Carácter inesperado"
+  if (/^\s*(?:(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/)\s*)*db\s*\./.test(String(sql ?? ''))) {
+    throw sqlError('Esto es código de MongoDB (db.…), no SQL: elige MongoDB en "Base de datos" y usa la pestaña "Código mongosh"');
+  }
   const stmts = statements(tokenize(sql));
   if (stmts.length !== 1) throw sqlError('Escribe exactamente una sentencia CREATE TABLE');
   const p = new Parser(stmts[0]);
